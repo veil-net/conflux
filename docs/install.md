@@ -23,13 +23,15 @@ it — it leaves `/usr/local/bin` out, as `secure_path` does on Fedora and RHEL,
 conflux first — it also links `/usr/bin/conflux` to it, so `sudo conflux` runs it, and keeps the
 link only where root's PATH, asked again with the link in place, finds it there. Making the
 link, asking and taking it back are one call to `sudo` (or `doas`), so one that asks for the
-password at every call, as `doas` without `persist` does, asks once for them. One that finds
-another conflux in its place would never reach the link: none is left, one an earlier run
+password at every call, as `doas` without `persist` does, asks once for them. Where root's PATH,
+asked again with the link in place, still finds another conflux, the link is never reached:
+none is left, one an earlier run
 made included, and the other is named, to be removed before `install.sh` is run again, or
 conflux typed by its full path under `sudo`. A `/usr/bin/conflux` that is not its link is left
 alone, and said: where root's PATH finds that file in conflux's place, or another conflux first,
-that one is to be removed before `install.sh` is run again, and where it finds none, conflux typed
-by its full path. Run again, it decides afresh: it links conflux where root's PATH then
+that one is to be removed before `install.sh` is run again, and where it finds none (the file is
+none root can run, a link to nothing, say), that file is to be removed the same way, or conflux
+typed by its full path. Run again, it decides afresh: it links conflux where root's PATH then
 needs the link, and makes none where that PATH finds conflux without one. Root's PATH is asked
 whether the run installs conflux or finds the release's already in place: where `sudo` (or
 `doas`) cannot answer without a password, as when nothing has asked for one yet, the script says

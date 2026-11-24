@@ -10,9 +10,10 @@
 # `conflux uninstall` removes it again, with everything else conflux put on the machine.
 #
 # Where root's PATH under sudo leaves /usr/local/bin out (sudo's secure_path on Fedora and
-# RHEL), /usr/bin/conflux is linked to it, so `sudo conflux` finds it too. Where root's PATH finds
-# another conflux in its place, a link there would never be reached: none is left, one made
-# before included, and the other is named, to be removed before this script is run again.
+# RHEL), /usr/bin/conflux is linked to it, so `sudo conflux` finds it too. Where root's PATH,
+# asked again with the link in place, still finds another conflux, the link is never reached:
+# none is left, one made before included, and the other is named, to be removed before this
+# script is run again.
 #
 # One setting, given to sh rather than curl (`curl -fsSL … | CONFLUX_VERSION=1.0.0 sh`):
 #
@@ -195,11 +196,12 @@ missed() {
 # notours says that $sudolink is a file conflux did not make, and why root's PATH does not find
 # $exe: where what it finds is that file -- through the link's own directory, however spelled,
 # as a merged /bin is /usr/bin -- or another conflux first, that it is to be removed before this
-# script is run again, which decides afresh, as missed says; where it finds none, $why, with
-# $exe's full path alone.
+# script is run again, which decides afresh, as missed says; where it finds none, $why, and the
+# file -- one root cannot run, a link to nothing, say -- to be removed before a run again the
+# same way, or $exe's full path.
 notours() {
   if [ -z "$found" ]; then
-    say "" "$sudolink is not conflux's, and $why: type $exe by its full path under sudo."
+    say "" "$sudolink is not conflux's, and $why: remove it and run the installer again, or type $exe by its full path under sudo."
   elif [ "${found%/*}" -ef "${sudolink%/*}" ]; then
     say "" "$sudolink is not conflux's, and root's PATH finds it rather than $exe: remove it and run the installer again, or type $exe by its full path under sudo."
   else

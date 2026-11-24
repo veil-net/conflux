@@ -6,12 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/service"
 	"golang.org/x/sys/windows"
 )
 
@@ -30,10 +32,7 @@ const workDir = ""
 // dropState holds the token the next anchord is started with, from dropTo to the start,
 // and the sets anchord -h has started from under one.
 type dropState struct {
-	token windows.Token
-	// sid is the service SID the token was made for, which anchord's process and thread
-	// are opened to: asked of Windows once, by dropTo, beside the token it goes with.
-	sid    string
+	token  windows.Token
 	smoked map[string]bool
 
 	// sd is the descriptor anchord's process and thread are created with. The attributes
@@ -42,9 +41,10 @@ type dropState struct {
 	sd *windows.SECURITY_DESCRIPTOR
 }
 
-// windowsServiceName is the SCM name of the installation's service, as service.ServiceName
-// registers it. Its own constant rather than service's, which imports this package.
-const windowsServiceName = "conflux"
+// confluxSID is the SID of the installation's own service, NT SERVICE\conflux, which the
+// token, anchord's process and thread, and the account's directories and files are made for:
+// a function of the service's name alone, asked of Windows once.
+var confluxSID = sync.OnceValues(func() (*windows.SID, error) { return serviceSID(service.ServiceName) })
 
 var (
 	advapi32                    = windows.NewLazySystemDLL("advapi32.dll")
@@ -70,7 +70,7 @@ func canDrop(*Privilege) string { return "" }
 
 // dropTo makes the token anchord runs as, and checks that anchord starts under it.
 func (s *Supervisor) dropTo(p *Privilege) string {
-	sid, err := serviceSID(windowsServiceName)
+	sid, err := confluxSID()
 	if err != nil {
 		return "could not form the service's SID: " + err.Error()
 	}
@@ -84,7 +84,6 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 
 	s.releaseDrop()
 	s.drop.token = tok
-	s.drop.sid = sid.String()
 
 	p.As = `NT AUTHORITY\LOCAL SERVICE`
 
@@ -300,8 +299,13 @@ func (s *Supervisor) procAttrFor(p Privilege) *syscall.SysProcAttr {
 	attr.Token = syscall.Token(s.drop.token)
 
 	if s.drop.sd == nil {
+		sid, err := confluxSID()
+		if err != nil {
+			return attr
+		}
+
 		sd, err := windows.SecurityDescriptorFromString(
-			"O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + s.drop.sid + ")(A;;RC;;;OW)")
+			"O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + sid.String() + ")(A;;RC;;;OW)")
 		if err != nil {
 			return attr
 		}
@@ -331,7 +335,7 @@ func (s *Supervisor) releaseDrop() {
 		s.drop.token = 0
 	}
 
-	s.drop.sid, s.drop.sd = "", nil
+	s.drop.sd = nil
 }
 
 func startProcess(cmd *exec.Cmd, _ Privilege, _ <-chan struct{}) error { return cmd.Start() }
@@ -364,7 +368,7 @@ func makeAnchorDir(path string, p Privilege) error {
 		return paths.Restrict(path, true)
 	}
 
-	ssid, err := serviceSID(windowsServiceName)
+	ssid, err := confluxSID()
 	if err != nil {
 		return err
 	}
@@ -400,7 +404,7 @@ func anchorDirFor(path string, p Privilege) bool {
 }
 
 func grantsServiceSID(path string) bool {
-	sid, err := serviceSID(windowsServiceName)
+	sid, err := confluxSID()
 	if err != nil {
 		return false
 	}
@@ -488,7 +492,7 @@ func writeDaemonFile(path string, data []byte, p Privilege) error {
 		return nil
 	}
 
-	sid, err := serviceSID(windowsServiceName)
+	sid, err := confluxSID()
 	if err != nil {
 		return err
 	}

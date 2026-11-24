@@ -234,14 +234,14 @@ func copyTree(from, to string, p Privilege) error {
 }
 
 func copyFile(src, dst *os.Root, name string, p Privilege) error {
-	in, err := src.OpenFile(name, openUntrusted, 0)
+	in, err := src.OpenFile(name, config.OpenUntrusted, 0)
 	if err != nil {
 		return nil
 	}
 	defer in.Close()
 
 	fi, err := in.Stat()
-	if err != nil || !fi.Mode().IsRegular() || !oneLink(fi) || fi.Size() > copyFileMax {
+	if err != nil || !config.Untrusted(fi, copyFileMax) {
 		return nil
 	}
 

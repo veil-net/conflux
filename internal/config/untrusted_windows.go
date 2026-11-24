@@ -1,28 +1,33 @@
 package config
 
 import (
-	"fmt"
-	"io"
 	"os"
+	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
-// ReadUntrusted reads a file in a directory anchord's own account can write, refusing
-// anything but a regular file of no more than max bytes.
-func ReadUntrusted(path string, max int64) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
+// OpenUntrusted is how a file in a directory another account can write is opened: the name
+// itself, never what a symbolic link or a junction of that name points at.
+const OpenUntrusted = os.O_RDONLY | windows.O_FILE_FLAG_OPEN_REPARSE_POINT
 
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
+// Untrusted reports whether fi, the file a name opened with OpenUntrusted, is one conflux
+// reads: a regular file, no reparse point of any kind, and no more than max bytes.
+//
+// A FileInfo carries no link count here. ReadUntrusted asks the handle for it (oneName);
+// copying between anchord's two directories (the daemon's copyTree) does not, since linking a
+// file on Windows takes write access to it, so a second name the account made is of a file it
+// could write already.
+func Untrusted(fi os.FileInfo, max int64) bool {
+	attrs, ok := fi.Sys().(*syscall.Win32FileAttributeData)
 
-	if !fi.Mode().IsRegular() || fi.Size() > max {
-		return nil, fmt.Errorf("%s is not a file conflux reads", path)
-	}
+	return fi.Mode().IsRegular() && ok && attrs.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0 &&
+		fi.Size() <= max
+}
 
-	return io.ReadAll(io.LimitReader(f, max))
+// oneName reports whether f has no second name, from its handle.
+func oneName(f *os.File) bool {
+	var info windows.ByHandleFileInformation
+
+	return windows.GetFileInformationByHandle(windows.Handle(f.Fd()), &info) == nil && info.NumberOfLinks == 1
 }

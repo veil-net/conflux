@@ -23,9 +23,6 @@ import (
 // and the process itself, are reachable by nothing else that runs as LOCAL SERVICE. A TUN
 // needs SYSTEM, for wintun, and gets it.
 
-// openUntrusted is what a file in the account's directory is opened with.
-const openUntrusted = os.O_RDONLY
-
 // workDir leaves anchord where a service's child starts.
 const workDir = ""
 
@@ -477,9 +474,6 @@ func grantSID(path string, sid *windows.SID, access windows.ACCESS_MASK) error {
 // ownFile has nothing to do: a file created in the account's directory inherits its
 // grant, and is owned by the SID the token names.
 func ownFile(*os.File, Privilege) error { return nil }
-
-// oneLink is not asked on Windows, where linking to a file takes write access to it.
-func oneLink(os.FileInfo) bool { return true }
 
 // writeDaemonFile writes anchord's -config: SYSTEM's and Administrators', and readable by
 // the service SID when anchord runs as its account.

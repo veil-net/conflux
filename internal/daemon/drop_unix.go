@@ -16,12 +16,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/account"
 	"github.com/veil-net/conflux/internal/config"
-	"golang.org/x/sys/unix"
 )
-
-// openUntrusted opens a file in a directory the account can write: never through a
-// symlink, and never blocking on a FIFO the name was made into.
-const openUntrusted = os.O_RDONLY | unix.O_NOFOLLOW | unix.O_NONBLOCK
 
 // dropState is what the platform keeps between starts: the grants anchord -h has run under.
 type dropState struct {
@@ -315,14 +310,6 @@ func ownFile(f *os.File, p Privilege) error {
 	}
 
 	return f.Chown(p.UID, p.GID)
-}
-
-// oneLink reports a file with no second name, which a hard link the account made to a
-// file of root's would be.
-func oneLink(fi os.FileInfo) bool {
-	st, ok := fi.Sys().(*syscall.Stat_t)
-
-	return ok && st.Nlink == 1
 }
 
 // owner is the uid and gid anchord's own files are written for: the account's, or -1 to

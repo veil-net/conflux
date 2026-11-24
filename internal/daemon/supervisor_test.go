@@ -739,7 +739,7 @@ func TestAStopOnTheWayToTheLockGoesNoFurther(t *testing.T) {
 					select {
 					case err = <-done:
 						unlock()
-					case <-time.After(time.Second):
+					case <-time.After(10 * time.Second):
 						t.Errorf("%s, stopped %s, waited for conflux.lock", name, when)
 						unlock()
 

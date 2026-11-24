@@ -128,7 +128,7 @@ func BenchmarkBringUp(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if _, err := bringUp(ctx, d, ctl, nopReporter{}, d.RootAnchorDir(), false, nil); err != nil {
+		if _, err := bringUp(ctx, d, ctl, nopReporter{}, d.RootAnchorDir(), false, nil, nil); err != nil {
 			b.Fatal(err)
 		}
 	}

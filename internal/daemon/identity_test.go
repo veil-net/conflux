@@ -44,7 +44,7 @@ func TestAStateThisBuildCannotReadIsRefusedForGood(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, nil)
+	_, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, nil, nil)
 	if !Permanent(err) || !strings.Contains(err.Error(), d.StateFile()) {
 		t.Errorf("bringUp = %v, want a refusal for good naming %s", err, d.StateFile())
 	}
@@ -76,7 +76,7 @@ func TestAnEmptyManifestIsRefusedForGood(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, nil)
+			_, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, nil, nil)
 			if !Permanent(err) || !strings.Contains(err.Error(), d.ManifestFile()) {
 				t.Errorf("bringUp = %v, want a refusal for good naming %s", err, d.ManifestFile())
 			}
@@ -103,7 +103,7 @@ func TestAnEmptiedTaintListGetsTheGrantBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, nil); err != nil {
+	if _, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, nil, nil); err != nil {
 		t.Fatalf("bringUp: %v", err)
 	}
 

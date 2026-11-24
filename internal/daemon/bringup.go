@@ -108,10 +108,12 @@ const MaxSkew = 10 * time.Minute
 //
 // dir is the anchor directory the daemon's identity was given (see Supervisor.anchorDir).
 // reopened counts the start as an uplink rebuilt, in the same state write as the rest,
-// once it has succeeded.
+// once it has succeeded. driver is what fetching Windows' driver came to (fetchDriver), before
+// the lock this takes: one that could not be had is the anchor's start's failure, after the
+// observer's start.
 func bringUp(
 	ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter, dir string, reopened bool,
-	observe func(config.Envelope) (string, error),
+	driver error, observe func(config.Envelope) (string, error),
 ) (started anchorctl.Started, err error) {
 	// Against `conflux renew` and the renewal timer, which read and rewrite the same
 	// manifest and state this does.
@@ -198,15 +200,11 @@ func bringUp(
 		return anchorctl.Started{}, fmt.Errorf("create %s: %w", dir, err)
 	}
 
-	// Windows needs the driver beside anchord before an interface can exist, and it lives in
-	// the content-addressed set directory: an upgraded conflux extracts a new set with no
-	// wintun.dll in it, and a boot must not need somebody to run `up`. Part of the anchor's
-	// start, after the observer's: a driver that cannot be had is an anchor that does not come
-	// up, which never takes the observer down, and a rebuild fetches it as the start does.
-	if cfg.Mode == config.ModeTUN {
-		if err := ensureDriver(ctx, d); err != nil {
-			return anchorctl.Started{}, err
-		}
+	// Part of the anchor's start, after the observer's: a driver that cannot be had is an anchor
+	// that does not come up, which never takes the observer down. Asked of the configuration read
+	// under the lock, which an edit since the fetch was decided may have taken out of TUN mode.
+	if cfg.Mode == config.ModeTUN && driver != nil {
+		return anchorctl.Started{}, driver
 	}
 
 	started, err = ctl.Start(ctx, env, anchorctl.ModeFromConfig(cfg, dir))
@@ -218,6 +216,23 @@ func bringUp(
 	st.IssuedAt, st.NotAfter = m.IssuedAt(), m.NotAfter()
 
 	return started, nil
+}
+
+// fetchDriver fetches Windows' driver where cfg runs an interface, and says what came of it
+// for bringUp to hand the anchor's start: nil where it was had or none is needed. Windows needs
+// it beside anchord before an interface can exist, and it lives in the content-addressed set
+// directory: an upgraded conflux extracts a new set with no wintun.dll in it, and a boot, or a
+// rebuild, must not need somebody to run `up`.
+//
+// Before bringUp takes conflux.lock, never under it: a first download takes up to wintun's
+// 90-second timeout, which `conflux renew` and up's save of the configuration would wait out,
+// for a fetch that writes nothing the lock guards.
+func fetchDriver(ctx context.Context, d paths.Dirs, cfg *config.Config) error {
+	if cfg.Mode != config.ModeTUN {
+		return nil
+	}
+
+	return ensureDriver(ctx, d)
 }
 
 // ensureDriver is wintun.Ensure, which tests replace: only Windows has a driver to fetch.

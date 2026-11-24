@@ -275,7 +275,7 @@ func TestAReopenedLinkIsCounted(t *testing.T) {
 	ctl := fakeCtl(t)
 
 	for _, reopened := range []bool{false, true, true} {
-		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, d.RootAnchorDir(), reopened, nil); err != nil {
+		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, d.RootAnchorDir(), reopened, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -298,13 +298,14 @@ func TestARebuildFetchesTheDriver(t *testing.T) {
 	credentialed(t, s.Dirs)
 	s.priv.Dir = s.Dirs.RootAnchorDir()
 
-	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeTUN, Taints: []string{"t"}}); err != nil {
+	cfg := &config.Config{Mode: config.ModeTUN, Taints: []string{"t"}}
+	if err := config.Save(s.Dirs, cfg); err != nil {
 		t.Fatal(err)
 	}
 
 	fetchingDriver(t, log, nil)
 
-	if err := s.rebuild(t.Context(), false); err != nil {
+	if err := s.rebuild(t.Context(), cfg, false); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 
@@ -390,7 +391,7 @@ func TestARebuildsRenewalReachesTheObserver(t *testing.T) {
 	s := &Supervisor{Dirs: d, ctl: fakeCtl(t), tail: newRing(tailLines), observing: true}
 	s.priv.Dir = d.RootAnchorDir()
 
-	if err := s.rebuild(t.Context(), false); err != nil {
+	if err := s.rebuild(t.Context(), cfg, false); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 
@@ -483,7 +484,7 @@ func TestTheWatcherCountsTheStartsRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, start := bringUp(t.Context(), s.Dirs, s.ctl, s.report(), s.priv.Dir, false, nil)
+	_, start := bringUp(t.Context(), s.Dirs, s.ctl, s.report(), s.priv.Dir, false, nil, nil)
 	if !Permanent(start) {
 		t.Fatalf("the stand-in's start = %v, want a refusal for good", start)
 	}

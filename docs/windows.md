@@ -40,12 +40,14 @@ pinned a different version from the product code would be a test of nothing.
 
 Because the DLL lands in the content-addressed set directory, upgrading conflux to a
 build with a different anchor pair needs it again in the new directory, and the
-supervisor fetches it there as part of the anchor's start, and of every rebuild of the
-anchor — a reboot after an upgrade needs nothing typed. That is correct: the driver belongs
-beside the executable that loads it. An anchor that cannot fetch it has not come up, like
-one whose start fails: on its own it is started again with the supervisor's backoff, and
-beside the observer, which is started first and which it never takes down, the watcher
-tries it again ([service.md](service.md)).
+supervisor fetches it there for every start of the anchor and every rebuild — a reboot after
+an upgrade needs nothing typed. That is correct: the driver belongs beside the executable that
+loads it. The fetch comes before the start takes `conflux.lock`, so a download that hangs, up
+to its 90-second timeout, holds up neither `conflux renew` nor `up`'s save of the
+configuration, which wait for that lock. A driver that could not be fetched is an anchor that
+has not come up, like one whose start fails: on its own it is started again with the
+supervisor's backoff, and beside the observer, which still starts and which it never takes
+down, the watcher tries it again ([service.md](service.md)).
 
 ## If it cannot be downloaded
 

@@ -111,7 +111,7 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.D
 			if why == "" {
 				anchor.backoff = rebuildBackoffMin
 			} else {
-				switch s.rebuildAnchor(ctx, why, link, anchor) {
+				switch s.rebuildAnchor(ctx, cfg, why, link, anchor) {
 				case respawned:
 					return false
 				case gaveUp:
@@ -162,11 +162,11 @@ const (
 )
 
 // rebuildAnchor rebuilds an anchor that is lost, and says what came of it.
-func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k *keeper) outcome {
+func (s *Supervisor) rebuildAnchor(ctx context.Context, cfg *config.Config, why string, link bool, k *keeper) outcome {
 	s.clearReady()
 	s.report().Warn("%s; rebuilding the anchor", why)
 
-	err := s.rebuild(ctx, link)
+	err := s.rebuild(ctx, cfg, link)
 	if err == nil {
 		s.report().Step("the anchor is back")
 		k.ok()
@@ -354,7 +354,10 @@ func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *t
 // boot already take, so a rebuilt anchor cannot be a subtly different one from the one
 // a reboot would start. The daemon is untouched, so this costs one anchor's sessions
 // and not the process.
-func (s *Supervisor) rebuild(ctx context.Context, link bool) error {
+//
+// cfg is the cycle's, which decides whether Windows' driver is fetched (fetchDriver), before
+// bringUp takes conflux.lock and reads the configuration again under it.
+func (s *Supervisor) rebuild(ctx context.Context, cfg *config.Config, link bool) error {
 	stopCtx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
@@ -365,7 +368,9 @@ func (s *Supervisor) rebuild(ctx context.Context, link bool) error {
 
 	// An ended link's rebuild is counted in the state bringUp writes anyway, where status
 	// reads it: a machine reopening its anchor every few minutes has a failing cable.
-	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link, nil)
+	driver := fetchDriver(ctx, s.Dirs, cfg)
+
+	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link, driver, nil)
 	if err != nil {
 		return err
 	}

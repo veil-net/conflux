@@ -422,7 +422,9 @@ func (s *Supervisor) up(ctx context.Context, cfg *config.Config) (id string, anc
 		}
 	}
 
-	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false, observe)
+	driver := fetchDriver(ctx, s.Dirs, cfg)
+
+	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false, driver, observe)
 
 	switch {
 	case err == nil:

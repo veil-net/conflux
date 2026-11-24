@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/wintun"
 )
@@ -434,9 +435,11 @@ func TestObservingAloneEnrolsFirst(t *testing.T) {
 }
 
 // TestTheObserverOutlivesAnAnchorThatDoesNotComeUp: beside an anchor, the observer starts
-// first, under the credential, and an anchor whose start then fails -- for now, or refused for
-// good -- leaves the daemon, the observer and its inventory running, for the watcher to bring
-// the anchor up later, rather than ending the cycle and the inventory with it. A refusal for
+// first, under the credential, and an anchor whose start then fails -- for now, refused for
+// good, or on Windows for a driver that could not be had, which is fetched before the start
+// takes conflux.lock (TestTheDriverIsFetchedOutsideTheLock) and so before the observer starts --
+// leaves the daemon, the observer and its inventory running, for the watcher to bring the
+// anchor up later, rather than ending the cycle and the inventory with it. A refusal for
 // good is the watcher's to count, as a rebuild's are, which gives the anchor up after
 // rebuildRefusals of them and keeps the observer (TestTheWatcherCountsTheStartsRefusal). The
 // service manager is told the unit started, or systemd would fail it after TimeoutStartSec and
@@ -450,13 +453,15 @@ func TestTheObserverOutlivesAnAnchorThatDoesNotComeUp(t *testing.T) {
 		mode   config.Mode // the anchor's
 		refuse string      // how the stand-in anchorctl refuses its start, or nothing
 		driver error       // what fetching Windows' driver fails with, or nothing
-		tried  string      // what the anchor's start got as far as: anchorctl's start, or the driver
+		steps  []string    // the driver's fetch, the observer's start and anchorctl's start that ran, in order
 	}{
-		"whose start fails for now": {mode: config.ModeProxy, refuse: fakeAnchorctlFailEnv, tried: "start"},
+		"whose start fails for now": {mode: config.ModeProxy, refuse: fakeAnchorctlFailEnv, steps: []string{"observe", "start"}},
 		// An argument vector anchorctl will not take, exit 2.
-		"whose start is refused for good": {mode: config.ModeProxy, refuse: fakeAnchorctlRefuseEnv, tried: "start"},
-		// An interface on Windows, with wintun.net out of reach.
-		"whose driver cannot be had": {mode: config.ModeTUN, driver: errors.New("wintun.net did not answer"), tried: "wintun"},
+		"whose start is refused for good": {mode: config.ModeProxy, refuse: fakeAnchorctlRefuseEnv,
+			steps: []string{"observe", "start"}},
+		// An interface on Windows, with wintun.net out of reach: no anchorctl start without it.
+		"whose driver cannot be had": {mode: config.ModeTUN, driver: errors.New("wintun.net did not answer"),
+			steps: []string{"wintun", "observe"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(fakeAnchorctlStatusEnv, "none")
@@ -505,9 +510,10 @@ func TestTheObserverOutlivesAnAnchorThatDoesNotComeUp(t *testing.T) {
 			}
 
 			cmds := ran(t, log)
-			if o, a := slices.Index(cmds, "observe"), slices.Index(cmds, c.tried); o < 0 || a < 0 || o > a {
-				t.Errorf("anchorctl ran %v; want the observer started, and then the anchor's start tried as far as %s",
-					cmds, c.tried)
+			if steps := slices.DeleteFunc(slices.Clone(cmds), func(cmd string) bool {
+				return !slices.Contains([]string{"wintun", "observe", "start"}, cmd)
+			}); !slices.Equal(steps, c.steps) {
+				t.Errorf("anchorctl ran %v; want, of the driver's fetch and the two starts, %v", cmds, c.steps)
 			}
 		})
 	}
@@ -533,6 +539,83 @@ func fetchingDriver(t *testing.T, log string, err error) {
 	}
 
 	t.Cleanup(func() { ensureDriver = wintun.Ensure })
+}
+
+// TestTheDriverIsFetchedOutsideTheLock: Windows' driver is fetched before the start takes
+// conflux.lock, and before a rebuild does, so a first download that hangs -- up to wintun's
+// 90-second timeout -- holds back neither `conflux renew` nor up's save of the configuration,
+// which wait for that lock. The anchor starts once the driver is had.
+func TestTheDriverIsFetchedOutsideTheLock(t *testing.T) {
+	for name, bring := range map[string]func(context.Context, *Supervisor, *config.Config) error{
+		"the start": func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
+			_, anchorErr, err := s.up(ctx, cfg)
+
+			return errors.Join(anchorErr, err)
+		},
+		"a rebuild": func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
+			return s.rebuild(ctx, cfg, false)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, log := supervised(t, "1")
+			credentialed(t, s.Dirs)
+			s.priv.Dir = s.Dirs.RootAnchorDir()
+
+			cfg := &config.Config{Mode: config.ModeTUN, Taints: []string{"t"}}
+			if err := config.Save(s.Dirs, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			fetching, fetched := make(chan struct{}), make(chan struct{})
+
+			ensureDriver = func(context.Context, paths.Dirs) error {
+				close(fetching)
+				<-fetched
+
+				return nil
+			}
+
+			t.Cleanup(func() { ensureDriver = wintun.Ensure })
+
+			done := make(chan error, 1)
+
+			go func() { done <- bring(t.Context(), s, cfg) }()
+
+			select {
+			case <-fetching:
+			case err := <-done:
+				t.Fatalf("brought up without fetching the driver: %v", err)
+			case <-time.After(10 * time.Second):
+				t.Fatal("the driver was never fetched")
+			}
+
+			unlock, free, err := flock.TryAcquire(s.Dirs.LockFile())
+
+			switch {
+			case err != nil:
+				t.Errorf("TryAcquire: %v", err)
+			case free:
+				unlock()
+			default:
+				t.Errorf("%s held conflux.lock while the driver was fetched", name)
+			}
+
+			close(fetched)
+
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("%s: %v", name, err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatalf("%s did not finish once the driver was had", name)
+			}
+
+			if !slices.Contains(ran(t, log), "start") {
+				t.Errorf("anchorctl ran %v: the anchor was never started", ran(t, log))
+			}
+		})
+	}
 }
 
 // TestNoCredentialNoObserver: the observer runs under the machine's credential, so beside an

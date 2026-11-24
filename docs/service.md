@@ -33,10 +33,13 @@ needs, wherever that costs it nothing; see [security.md](security.md#what-anchor
 — makes the account the first time, removes from both anchor directories whatever anchor did
 not put there, as it does before every start of `anchord`, since the account writes in its
 own, lays out the directories that identity reaches,
-starts `anchord`, waits until it answers an authenticated `status` call, enrols the machine
-if it has no credential yet or renews the one it has if it is past two thirds of its window,
-starts the observer under it where the configuration observes, and starts the anchor. No
-prompts, and nothing typed.
+starts `anchord`, waits until it answers an authenticated `status` call, on Windows fetches
+`wintun.dll` for an interface where the set has none ([windows.md](windows.md)), enrols the
+machine if it has no credential yet or renews the one it has if it is past two thirds of its
+window, starts the observer under it where the configuration observes, and starts the anchor.
+No prompts, and nothing typed. The fetch, a rebuild's as well, comes before `conflux.lock` is
+taken, so a download that hangs holds up neither `conflux renew` nor `up`'s save of the
+configuration, which wait for that lock.
 
 The credential comes first because both run under it: anchor's observer runs as the identity
 the credential names, checked as an anchor's start is, and the manifest reaches it on
@@ -45,9 +48,10 @@ started on every start because anchord keeps none across one. Observing alone, t
 anchor, and the observer is what readiness waits for; the AnchorID the observer reports in full
 is what the credential is renewed by, and the renewal timer runs as it does beside an anchor.
 Beside an anchor, an anchor that does not come up — a start that fails, even one refused for
-good — leaves the daemon running, and with it the observer and the inventory it holds, for the
-watcher to bring the anchor up when it can, as it rebuilds one that is lost, or to give it up,
-the start's refusal counted as a rebuild's (below); a credential that cannot be had, an
+good, or on Windows one whose driver could not be fetched — leaves the daemon running, and
+with it the observer and the inventory it holds, for the watcher to bring the anchor up when
+it can, as it rebuilds one that is lost, or to give it up, the start's refusal counted as a
+rebuild's (below); a credential that cannot be had, an
 enrolment nobody answers, starts neither, and the start is tried again. anchord serves the observer unasked, so nothing on its
 command line says whether it observes. See [observe.md](observe.md). A start that fails because the decision no longer fits — the first
 enrolment named a port below 1024, an uplink's device appeared — starts `anchord` again

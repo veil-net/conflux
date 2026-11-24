@@ -29,7 +29,7 @@ func TestAskReadsLineByLine(t *testing.T) {
 
 // TestConfirmTakesOnlyAnExplicitYes: [y/N] defaults to no. Enter alone, end of input and any
 // other word are a no; only y or yes, in any case, is a yes -- the question uninstall asks
-// before it deletes the only copy of an identity, and update before it crosses trees.
+// before it deletes the only copy of an identity, and update before it replaces the installed conflux.
 func TestConfirmTakesOnlyAnExplicitYes(t *testing.T) {
 	in, out := In, Out
 	t.Cleanup(func() { In, Out = in, out })

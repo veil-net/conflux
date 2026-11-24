@@ -20,8 +20,8 @@ import (
 // started is no failure of the start, as one that cuts an anchor's start or rebuild short is not
 // (TestAStopThatEndsABringUpIsNoFailure). Beside an anchor, the cycle's start warns of nothing and
 // goes no further -- no anchor directory made, no anchor started -- and hands back a failure the
-// stopped cycle drops. The state is written all the same, as after any failure once the
-// credential is had, which keeps what the credential came to. The watcher's restart of an
+// stopped cycle drops. The state is written all the same, naming the pair, as after any failure
+// once the credential is had, which keeps what the credential came to. The watcher's restart of an
 // observer whose capture ended says that much and nothing more, charges nothing to the
 // observer's keeper, and does not give the observer up. Unix's alone, for the FIFO.
 func TestAStopDuringTheObserversStartIsNoFailure(t *testing.T) {
@@ -31,6 +31,7 @@ func TestAStopDuringTheObserversStartIsNoFailure(t *testing.T) {
 		s, log := supervised(t, "1")
 		credentialed(t, s.Dirs)
 		s.priv.Dir = s.Dirs.RootAnchorDir()
+		s.ctl.SetID = "the set"
 
 		w := &warnings{}
 		s.Reporter = w
@@ -61,6 +62,13 @@ func TestAStopDuringTheObserversStartIsNoFailure(t *testing.T) {
 
 		if cmds := ran(t, log); !slices.Equal(cmds, []string{"observe"}) {
 			t.Errorf("anchorctl ran %v; want the observer's start alone", cmds)
+		}
+
+		if st, err := config.LoadState(s.Dirs); err != nil {
+			t.Error(err)
+		} else if st.BinSetID != s.ctl.SetID {
+			t.Errorf("the start, stopped, left a state naming the pair %q; want it written, naming %q",
+				st.BinSetID, s.ctl.SetID)
 		}
 	})
 

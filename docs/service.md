@@ -112,18 +112,21 @@ left to stop the first one's daemon. `conflux uninstall` does the same once the 
 removed, so nothing is left running out of the directory it deletes.
 
 A start that fails is retried with a backoff up to thirty seconds. One that no retry
-changes — a configuration conflux refuses, taints the credential does not grant, an
-expired credential with nowhere to renew it or no AnchorID recorded to renew it with, a
-credential for another realm tree, a TUN the host will not give, a host that will not
-be set up to forward, an argument vector anchorctl refuses — stops the supervisor after
-three attempts with exit 70, unless the observer runs beside the anchor, which an anchor's
-refusal never takes down: the watcher gives the anchor up instead (below). Nothing to start at
-all is exit 78. Anything else the
-supervisor stops on — an extraction onto a full disk, say — exits 1, which systemd,
-launchd and the Windows SCM restart. On the BSDs nothing does: FreeBSD's `daemon(8)` runs
-without `-r`, which would restart 78 and 70 as well, and OpenBSD's `rc.subr` does not
-supervise, so there a supervisor that exits 1 waits for `conflux start` or the next boot.
-What each does with 78 and 70 is below.
+changes stops the supervisor with exit 70 after three attempts — a configuration conflux
+refuses (at once, where the supervisor finds it so as it starts), taints the credential does
+not grant, an expired credential with nowhere to renew it or no AnchorID recorded to renew it
+with, a credential for another realm tree, a TUN the host will not give, a host that will not
+be set up to forward, an argument vector anchorctl refuses. Only a refusal of the anchor's own
+start once the observer runs beside it — a TUN, the forwarding, an argument vector — leaves
+the observer running, since an anchor that does not come up never takes it down: the watcher
+gives the anchor up instead (below). The rest — the configuration, the taints, a credential
+expired or from another tree — are refused before the observer runs, or refuse it as well,
+since it runs under the credential too, and stop the supervisor beside an observer as without
+one. Nothing to start at all is exit 78. Anything else the supervisor stops on — an
+extraction onto a full disk, say — exits 1, which systemd, launchd and the Windows SCM
+restart. On the BSDs nothing does: FreeBSD's `daemon(8)` runs without `-r`, which would
+restart 78 and 70 as well, and OpenBSD's `rc.subr` does not supervise, so there a supervisor
+that exits 1 waits for `conflux start` or the next boot. What each does with 78 and 70 is below.
 
 anchord can also lose its anchor without exiting, so the supervisor asks it every thirty
 seconds whether it still holds one (every ten, through the link watcher's gauge, on an

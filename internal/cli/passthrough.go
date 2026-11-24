@@ -29,9 +29,13 @@ import (
 // nothing left in `ps` pretending to be a wrapper. Usage and a socket the user named run as
 // a child instead (anchorctlAside), since they make nothing of conflux's.
 func passthrough(ctx context.Context, args []string) int {
-	// A daemon the user named themselves is not conflux's: nothing of conflux's is needed to
-	// reach it, so nothing is made, and none of connectionDetails' checks apply.
-	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
+	// Usage reaches no daemon, and a daemon the user named themselves is not conflux's:
+	// nothing of conflux's is needed for either, so nothing is made, and none of
+	// connectionDetails' checks apply. Usage alone of anchorctl's commands needs nothing
+	// running: keygen, issue and inspect, which it groups under "no anchor needed", need no
+	// *anchor*, but are still RPCs to the daemon, which mints the identity and derives the
+	// id; help is answered by Go's flag package before anything dials.
+	if wantsUsage(args) || namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
 		return anchorctlAside(args)
 	}
 
@@ -40,11 +44,6 @@ func passthrough(ctx context.Context, args []string) int {
 	token, code := connectionDetails(d, args)
 	if code != ExitOK {
 		return code
-	}
-
-	// Usage reaches no daemon, and makes nothing.
-	if wantsUsage(args) {
-		return anchorctlAside(args)
 	}
 
 	// Only once there is something to talk to. Extracting first made the directories
@@ -81,15 +80,6 @@ func anchorctlAside(args []string) int {
 // started anchord and is not meant to. Everything else, including anchorctl's
 // genuinely good explanations of every other refusal, passes through untouched.
 func connectionDetails(d paths.Dirs, args []string) (string, int) {
-	// Usage needs nothing running. anchorctl groups keygen, issue and inspect
-	// under "no anchor needed", but that means no *anchor*: they are still RPCs to
-	// the daemon, which mints the identity and derives the id. Asking for help is
-	// the only thing that genuinely reaches no socket, because Go's flag package
-	// answers before anything dials.
-	if wantsUsage(args) {
-		return "", ExitOK
-	}
-
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
 		ui.Errf("nothing is running here.\n\n"+
 			"  conflux start                       start from a configuration that already exists\n"+

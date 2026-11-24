@@ -32,13 +32,14 @@ func runServe(ctx context.Context, args []string) int {
 
 	d := paths.Default()
 
-	reconcileService(d)
-
 	sup := &daemon.Supervisor{
 		Dirs:     d,
 		Reporter: reporter{},
 		Ready:    make(chan struct{}),
 		Drop:     true,
+		// Once serve.lock is held, so a second supervisor, refused, changes nothing; on
+		// Windows that is also once the output goes to the Event Log, which records a failure.
+		Reconcile: func() { reconcileService(d) },
 	}
 
 	if !*foreground {
@@ -83,7 +84,7 @@ func runSupervisor(ctx context.Context, sup *daemon.Supervisor) int {
 
 // supervisorExit says why the supervisor ended, and picks the exit status that tells the
 // service manager whether to start it again. Shared by the foreground run and the
-// Windows service, whose output is the log file.
+// Windows service, whose output is the Event Log.
 func supervisorExit(err error) int {
 	switch {
 	case err == nil:

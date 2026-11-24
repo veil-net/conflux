@@ -1,11 +1,19 @@
 package cli
 
 import (
+	"bytes"
+	"errors"
+	"io/fs"
+	"os"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/flock"
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/service"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // recordingService is a registered service that records what it was asked to register.
@@ -39,5 +47,51 @@ func TestServePutsTheServiceBack(t *testing.T) {
 
 	if want := []string{d.ServiceExecutable(), "serve"}; !slices.Equal(got, want) {
 		t.Errorf("the registration put back is %q, want %q", got, want)
+	}
+}
+
+// TestARefusedSupervisorChangesNothing: a second `conflux serve`, refused for the serve.lock
+// another holds, puts nothing of the service back -- neither the copy it runs nor its
+// registration -- since the one holding the lock is the service, and keeps it.
+func TestARefusedSupervisorChangesNothing(t *testing.T) {
+	t.Cleanup(paths.UseRoot(t.TempDir()))
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
+	}
+
+	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+	if err != nil || !ok {
+		t.Fatalf("hold serve.lock: %v, %v", ok, err)
+	}
+	t.Cleanup(unlock)
+
+	var got []string
+
+	was, elevated := services, privcheck.Elevated
+	services = func() service.Manager { return recordingService{reconciled: &got} }
+	privcheck.Elevated = func() bool { return true }
+
+	t.Cleanup(func() { services, privcheck.Elevated = was, elevated })
+
+	var said bytes.Buffer
+
+	oldErr := ui.Errw
+	ui.Errw = &said
+
+	t.Cleanup(func() { ui.Errw = oldErr })
+
+	if code := runServe(t.Context(), []string{"--foreground"}); code != ExitError ||
+		!strings.Contains(said.String(), "another conflux supervisor") {
+		t.Errorf("a second supervisor exited %d, saying %q; want %d and the refusal", code, said.String(), ExitError)
+	}
+
+	if got != nil {
+		t.Errorf("a refused supervisor put the registration back: %q", got)
+	}
+
+	if _, err := os.Lstat(d.ServiceExecutable()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a refused supervisor placed %s: %v", d.ServiceExecutable(), err)
 	}
 }

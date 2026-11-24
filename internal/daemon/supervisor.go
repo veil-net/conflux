@@ -73,6 +73,12 @@ type Supervisor struct {
 	// as root makes no account.
 	Drop bool
 
+	// Reconcile, where set, puts the boot service back to what this conflux registers. Run
+	// calls it once serve.lock is held, so a supervisor refused for another's changes nothing
+	// of the service the other keeps. The service sets it; a test and an ephemeral run leave
+	// it nil.
+	Reconcile func()
+
 	tools *libexec.Tools
 	ctl   *anchorctl.Ctl
 	tail  *ring
@@ -193,6 +199,12 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// does not know. One that does not parse is loadConfig's to refuse, saying where.
 	if err := s.canonical(); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		s.report().Warn("could not write conflux.json and state.json in conflux's form: %v", err)
+	}
+
+	// The registration and the copy it runs, as the root is put back: before the
+	// configuration is read, so a service with nothing to start yet still runs this conflux.
+	if s.Reconcile != nil {
+		s.Reconcile()
 	}
 
 	// Nothing to supervise, or nothing it will start on, before anything is extracted.

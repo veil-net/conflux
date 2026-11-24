@@ -30,7 +30,7 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 	anchortest.Require(t)
 
 	// Only anchorctl's usage is asked, so the one usage asks: nothing extracted.
-	bin, done, err := libexec.ForUsage(paths.Dirs{Root: t.TempDir()})
+	bin, done, _, err := libexec.ForUsage(paths.Dirs{Root: t.TempDir()})
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
 	}

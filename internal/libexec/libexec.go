@@ -157,33 +157,38 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // making them would make again, after an uninstall, what it removed, 50-odd MB of binaries in
 // it, and on Windows, asked by an account that is not an administrator, would leave the root
 // that account's, which every later install refuses (EnsureAll).
-func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
+//
+// temporary says which it is: true for the copy, gone once done is called, so a caller must
+// wait for it to finish first; false for the extraction or the one in memory, which outlast
+// this process -- the one in memory as well, since the kernel opens its file before exec
+// closes its descriptor -- and can replace it, and where done does nothing.
+func ForUsage(d paths.Dirs) (bin string, done func(), temporary bool, err error) {
 	if t, err := Extracted(d); err == nil {
-		return t.Anchorctl, func() {}, nil
+		return t.Anchorctl, func() {}, false, nil
 	}
 
 	if t, err := AnchorctlInMemory(); err == nil {
-		return t.Anchorctl, func() {}, nil
+		return t.Anchorctl, func() {}, false, nil
 	}
 
 	if !anchor.Supported {
-		return "", nil, fmt.Errorf(
+		return "", nil, false, fmt.Errorf(
 			"this conflux was built for %s/%s and carries no anchor binaries for it", runtime.GOOS, runtime.GOARCH)
 	}
 
 	dir, err := os.MkdirTemp("", "conflux-usage-")
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
 
 	bin = filepath.Join(dir, exeName("anchorctl"))
 	if err := writeExecutable(bin, anchor.Anchorctl(), paths.RestrictToOwner); err != nil {
 		_ = os.RemoveAll(dir)
 
-		return "", nil, err
+		return "", nil, false, err
 	}
 
-	return bin, func() { _ = os.RemoveAll(dir) }, nil
+	return bin, func() { _ = os.RemoveAll(dir) }, true, nil
 }
 
 // complete reports whether the directory holds a finished extraction of exactly

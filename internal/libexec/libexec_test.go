@@ -268,9 +268,13 @@ func TestUsageMakesNothing(t *testing.T) {
 
 	d := paths.Default()
 
-	bin, done, err := ForUsage(d)
+	bin, done, temporary, err := ForUsage(d)
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
+	}
+
+	if inMemory := strings.HasPrefix(bin, "/proc/self/fd/"); temporary == inMemory {
+		t.Errorf("ForUsage gave %s, temporary %v", bin, temporary)
 	}
 
 	if out, err := exec.Command(bin, "help").CombinedOutput(); err != nil || !strings.Contains(string(out), "anchorctl") {
@@ -296,15 +300,15 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bin, done, err = ForUsage(d)
+	bin, done, temporary, err = ForUsage(d)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	done()
 
-	if bin != tools.Anchorctl {
-		t.Errorf("usage ran %s where %s is extracted", bin, tools.Anchorctl)
+	if bin != tools.Anchorctl || temporary {
+		t.Errorf("usage ran %s, temporary %v, where %s is extracted", bin, temporary, tools.Anchorctl)
 	}
 
 	if _, err := os.Stat(bin); err != nil {

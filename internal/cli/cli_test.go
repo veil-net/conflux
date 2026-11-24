@@ -711,7 +711,7 @@ func TestLANDiscoveryTristate(t *testing.T) {
 func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	anchortest.Require(t)
 
-	bin, done, err := libexec.ForUsage(paths.Dirs{Root: t.TempDir()})
+	bin, done, _, err := libexec.ForUsage(paths.Dirs{Root: t.TempDir()})
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
 	}

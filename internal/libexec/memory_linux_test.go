@@ -80,14 +80,14 @@ func TestForUsageWritesNothing(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 
-	bin, done, err := ForUsage(paths.Dirs{Root: filepath.Join(t.TempDir(), "nothing-extracted")})
+	bin, done, temporary, err := ForUsage(paths.Dirs{Root: filepath.Join(t.TempDir(), "nothing-extracted")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer done()
 
-	if !strings.HasPrefix(bin, "/proc/self/fd/") {
-		t.Errorf("help asks %s, not an anchorctl in memory", bin)
+	if !strings.HasPrefix(bin, "/proc/self/fd/") || temporary {
+		t.Errorf("help asks %s, temporary %v, not an anchorctl in memory", bin, temporary)
 	}
 
 	if entries, _ := os.ReadDir(tmp); len(entries) > 0 {

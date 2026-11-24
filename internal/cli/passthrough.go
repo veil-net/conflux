@@ -66,33 +66,17 @@ func passthrough(ctx context.Context, args []string) int {
 // whole extraction, or one in memory. A temporary copy is removed once anchorctl has finished
 // with it, so that one alone runs as a child, which is passed what conflux is sent.
 func anchorctlAside(ctx context.Context, args []string) int {
-	d := paths.Default()
-
-	bin, done, err := libexec.ForUsage(d)
+	bin, done, temporary, err := libexec.ForUsage(paths.Default())
 	if err != nil {
 		return fail(err)
 	}
 	defer done()
 
-	if lasting(d, bin) {
+	if !temporary {
 		return anchorctlExec(ctx, bin, args, os.Environ())
 	}
 
 	return anchorctlRun(bin, args, os.Environ())
-}
-
-// lasting reports whether bin, the anchorctl ForUsage gave, outlasts this process -- d's whole
-// extraction, or the one in memory, whose file the kernel opens before exec closes its
-// descriptor -- rather than being the temporary copy ForUsage's done removes. The one in memory
-// is made once, by ForUsage where it took it.
-func lasting(d paths.Dirs, bin string) bool {
-	if t, err := libexec.Extracted(d); err == nil && t.Anchorctl == bin {
-		return true
-	}
-
-	t, err := libexec.AnchorctlInMemory()
-
-	return err == nil && t.Anchorctl == bin
 }
 
 // connectionDetails reads the token, and intercepts the one failure anchorctl

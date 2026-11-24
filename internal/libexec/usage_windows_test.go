@@ -17,9 +17,9 @@ import (
 func TestTheUsageCopyIsTheCallersOwn(t *testing.T) {
 	anchortest.Require(t)
 
-	bin, done, err := ForUsage(paths.Dirs{Root: filepath.Join(t.TempDir(), "nothing-extracted")})
-	if err != nil {
-		t.Fatalf("ForUsage: %v", err)
+	bin, done, temporary, err := ForUsage(paths.Dirs{Root: filepath.Join(t.TempDir(), "nothing-extracted")})
+	if err != nil || !temporary {
+		t.Fatalf("ForUsage: %s, temporary %v, %v", bin, temporary, err)
 	}
 	defer done()
 

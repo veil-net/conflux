@@ -102,7 +102,7 @@ func runHelp(ctx context.Context, args []string) int {
 // printAnchorctlUsage appends the embedded anchorctl's own help, under a rule. Best
 // effort: a machine where no anchorctl can be run still gets conflux's half.
 func printAnchorctlUsage(ctx context.Context) {
-	bin, done, err := libexec.ForUsage(paths.Default())
+	bin, done, _, err := libexec.ForUsage(paths.Default())
 	if err != nil {
 		return
 	}

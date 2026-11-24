@@ -31,6 +31,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 const (
@@ -43,10 +45,6 @@ const (
 	// dev's.
 	ReleaseTag = "latest"
 	DevTag     = "dev-latest"
-
-	// insecureEnv permits a plain-http API, for a test server. The same override
-	// internal/enrol and internal/anchorrelease read.
-	insecureEnv = "CONFLUX_ALLOW_INSECURE_API"
 
 	// maxRelease bounds the release document; maxBinary one download. A conflux is
 	// 45 to 75 MB (the size gate in `make dist`), so 200 MB is far above anything real.
@@ -112,7 +110,7 @@ func AssetName(goos, goarch string) string {
 func Latest(ctx context.Context, src Source, tag, goos, goarch string) (*Release, error) {
 	src = src.withDefaults()
 
-	if err := checkScheme(src.API); err != nil {
+	if err := config.CheckAPIURL(src.API); err != nil {
 		return nil, err
 	}
 
@@ -331,7 +329,7 @@ func statusErr(resp *http.Response, repo, tag string) error {
 // the release document gave, so the hop is safe.
 var httpClient = &http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if err := checkScheme(req.URL.String()); err != nil {
+		if err := config.CheckAPIURL(req.URL.String()); err != nil {
 			return err
 		}
 
@@ -341,24 +339,4 @@ var httpClient = &http.Client{
 
 		return nil
 	},
-}
-
-func checkScheme(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
-	}
-
-	switch u.Scheme {
-	case "https":
-		return nil
-	case "http":
-		if os.Getenv(insecureEnv) == "1" {
-			return nil
-		}
-
-		return fmt.Errorf("%s is plain http (set %s=1 to override, for tests)", raw, insecureEnv)
-	default:
-		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
-	}
 }

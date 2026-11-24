@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 // A release, served the way GitHub serves one: a release document listing assets by id,
@@ -216,7 +218,7 @@ func (f *fakeRelease) serve(t *testing.T, pin string, version int) (*httptest.Se
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	t.Setenv(insecureEnv, "1")
+	t.Setenv(config.InsecureAPIEnv, "1")
 
 	return srv, Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "t0ken"}
 }
@@ -476,7 +478,7 @@ func TestFetchRefusesAReleaseWithNoManifest(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	t.Setenv(insecureEnv, "1")
+	t.Setenv(config.InsecureAPIEnv, "1")
 
 	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "t0ken"}
 
@@ -538,7 +540,7 @@ func TestARefusedTokenSaysSo(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	t.Setenv(insecureEnv, "1")
+	t.Setenv(config.InsecureAPIEnv, "1")
 
 	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "expired"}
 
@@ -575,7 +577,7 @@ func TestFetchRefusesPlainHTTPWithoutTheOverride(t *testing.T) {
 	srv, src := f.serve(t, testPin, 1)
 
 	// serve() sets the override; take it away again, which is the real configuration.
-	t.Setenv(insecureEnv, "")
+	t.Setenv(config.InsecureAPIEnv, "")
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "plain http") {

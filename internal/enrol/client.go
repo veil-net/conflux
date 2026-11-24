@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -36,10 +35,6 @@ const (
 	maxRedirects = 3
 )
 
-// insecureEnv permits a plain-http base URL. Set only by tests, which point the
-// client at an httptest server.
-const insecureEnv = "CONFLUX_ALLOW_INSECURE_API"
-
 // defaultHTTP is the transport every Client shares unless given its own: Go's
 // default, which keeps idle connections for a bounded time and honours a proxy in
 // the environment, and redirects that stay on one host and on https.
@@ -56,7 +51,7 @@ var defaultHTTP = &http.Client{
 			return fmt.Errorf("refusing a redirect from %s to %s", via[0].URL.Host, req.URL.Host)
 		}
 
-		if err := checkScheme(req.URL.String()); err != nil {
+		if err := config.CheckAPIURL(req.URL.String()); err != nil {
 			return err
 		}
 
@@ -195,7 +190,7 @@ func (c *Client) Enrol(ctx context.Context, taints []string) (config.Envelope, e
 
 	u := c.base() + enrolPath
 
-	if err := checkScheme(u); err != nil {
+	if err := config.CheckAPIURL(u); err != nil {
 		return nil, err
 	}
 
@@ -249,7 +244,7 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string, taints 
 		return Renewal{}, errors.New("renew: the credential names no renewal URL, so there is nowhere to renew it")
 	}
 
-	if err := checkScheme(renewalURL); err != nil {
+	if err := config.CheckAPIURL(renewalURL); err != nil {
 		return Renewal{}, err
 	}
 
@@ -401,27 +396,6 @@ func (e *HTTPError) Error() string {
 	}
 
 	return status + ": " + e.Body
-}
-
-func checkScheme(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
-	}
-
-	switch u.Scheme {
-	case "https":
-		return nil
-	case "http":
-		if os.Getenv(insecureEnv) == "1" {
-			return nil
-		}
-
-		return fmt.Errorf("%s is plain http; credentials are only fetched over https (set %s=1 to override, for tests)",
-			raw, insecureEnv)
-	default:
-		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
-	}
 }
 
 // SameHost is the check that a stored field cannot redirect a POST.

@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"runtime"
 	"time"
@@ -76,6 +77,39 @@ const ConfigVersion = 1
 
 // DefaultAPIBaseURL is where enrolment happens.
 const DefaultAPIBaseURL = "https://api.veilnet.com.au"
+
+// InsecureAPIEnv, set to 1, lets CheckAPIURL take a plain-http URL. Only tests set it, which
+// point conflux at an httptest server.
+const InsecureAPIEnv = "CONFLUX_ALLOW_INSECURE_API"
+
+// CheckAPIURL refuses a URL conflux will not send a request to: one that is not absolute, has
+// no host, or is not https, unless InsecureAPIEnv allows plain http. The one check for every
+// API conflux reaches -- the enrolment API a configuration names, a renewal URL a manifest
+// names, the release APIs update and anchor-fetch read, and every redirect any of them
+// follows -- since two answers to one question make the more permissive the way in.
+func CheckAPIURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%q is not a URL: %w", raw, err)
+	}
+
+	if u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("%q is not an absolute URL with a host, such as %s", raw, DefaultAPIBaseURL)
+	}
+
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if os.Getenv(InsecureAPIEnv) == "1" {
+			return nil
+		}
+
+		return fmt.Errorf("%s is plain http (set %s=1 to override, for tests)", raw, InsecureAPIEnv)
+	default:
+		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
+	}
+}
 
 // Config is the operator's intent, and the only thing a reboot needs in order to
 // reconstruct the running state without asking anybody anything.
@@ -267,9 +301,10 @@ func (c *Config) APIBase() string {
 // typed, rather than letting them surface as an InvalidArgument from a child
 // process three layers down. It accepts and refuses what anchor does, and adds rules
 // of conflux's own, each where it is checked: no list entry holds the comma anchorctl
-// splits its flags on, and an uplink names a device rather than a descriptor the
-// supervisor never hands over. An empty taint set is not refused here: it is an issued
-// credential's grant, and asking alpha for it is refused where enrolment happens.
+// splits its flags on, an uplink names a device rather than a descriptor the
+// supervisor never hands over, and the API is one CheckAPIURL lets conflux reach. An
+// empty taint set is not refused here: it is an issued credential's grant, and asking
+// alpha for it is refused where enrolment happens.
 func (c *Config) Validate() error {
 	switch c.Mode {
 	case ModeTUN:
@@ -375,6 +410,14 @@ func (c *Config) Validate() error {
 
 	if err := ValidatePeers(c.Peers); err != nil {
 		return err
+	}
+
+	// Empty is the default, which is https. Anything else every enrolment and renewal is sent
+	// to, so one that could reach nothing is refused here, for good, rather than retried.
+	if c.APIBaseURL != "" {
+		if err := CheckAPIURL(c.APIBaseURL); err != nil {
+			return fmt.Errorf("apiBaseUrl (--api): %w", err)
+		}
 	}
 
 	return ValidateSubnets(c.Subnets, c.Taints)

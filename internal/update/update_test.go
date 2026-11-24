@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 // A release, served the way GitHub serves one: a release document listing assets by id,
@@ -119,7 +121,7 @@ func (f *fakeRelease) serve(t *testing.T) Source {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	t.Setenv(insecureEnv, "1")
+	t.Setenv(config.InsecureAPIEnv, "1")
 
 	return Source{API: srv.URL, UserAgent: "conflux/test"}
 }
@@ -265,22 +267,22 @@ func TestAReleaseThatCannotBeTrustedOrUsedIsRefused(t *testing.T) {
 }
 
 func TestPlainHTTPIsRefusedUnlessATestAsksForIt(t *testing.T) {
-	t.Setenv(insecureEnv, "")
+	t.Setenv(config.InsecureAPIEnv, "")
 
 	if _, err := Latest(context.Background(), Source{API: "http://127.0.0.1:1"}, ReleaseTag, "linux", "amd64"); err == nil ||
 		!strings.Contains(err.Error(), "plain http") {
 		t.Errorf("Latest over plain http: %v", err)
 	}
 
-	if err := checkScheme("ftp://example.com"); err == nil {
-		t.Error("checkScheme accepted ftp")
+	if _, err := Latest(context.Background(), Source{API: "ftp://example.com"}, ReleaseTag, "linux", "amd64"); err == nil {
+		t.Error("Latest accepted an ftp API")
 	}
 }
 
 // TestARedirectToPlainHTTPIsRefused: the hop to storage is followed, but not one that
 // would hand the binary to anyone on the path.
 func TestARedirectToPlainHTTPIsRefused(t *testing.T) {
-	t.Setenv(insecureEnv, "")
+	t.Setenv(config.InsecureAPIEnv, "")
 
 	req, _ := http.NewRequest(http.MethodGet, "http://objects.example.com/conflux", nil)
 	if err := httpClient.CheckRedirect(req, nil); err == nil {

@@ -114,6 +114,40 @@ func TestTheObserverIsRefusedWhereThereIsNoCapture(t *testing.T) {
 	}
 }
 
+// TestValidateRefusesAnAPIThatCannotWork: an apiBaseUrl that no enrolment or renewal could
+// be sent to -- no scheme, no host, plain http, another scheme -- is refused before anything
+// starts, rather than failing every call after it, for ever. Plain http is a test's alone.
+func TestValidateRefusesAnAPIThatCannotWork(t *testing.T) {
+	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "")
+
+	for _, api := range []string{"api-dev.veilnet.com.au", "http://api.veilnet.com.au", "https://", "ftp://x"} {
+		c := base(ModeProxy)
+		c.APIBaseURL = api
+
+		if err := c.Validate(); err == nil {
+			t.Errorf("Validate accepted apiBaseUrl %q", api)
+		}
+	}
+
+	for _, api := range []string{"", DefaultAPIBaseURL, "https://api-dev.veilnet.com.au", "https://guardian.example:8443/v1"} {
+		c := base(ModeProxy)
+		c.APIBaseURL = api
+
+		if err := c.Validate(); err != nil {
+			t.Errorf("Validate refused apiBaseUrl %q: %v", api, err)
+		}
+	}
+
+	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+
+	c := base(ModeProxy)
+	c.APIBaseURL = "http://127.0.0.1:8080"
+
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate refused a test's plain-http API with the override set: %v", err)
+	}
+}
+
 // Exports is the observer's records leaving as they are made: an export that is on and
 // carries flows, and nothing less.
 func TestExportsNeedsFlowsOn(t *testing.T) {

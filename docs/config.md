@@ -89,7 +89,7 @@ which holds its socket, are the account's own; a root anchord is given `anchor.r
 | `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
 | `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Either mode, as `subnets`; anchor refuses the two together. |
 | `tunName` | the interface name `--interface` asked for. `tun` only. Absent is the usual case: the anchor then names the interface after itself, `anchor` and the start of its AnchorID, on Linux and Windows, and macOS and the BSDs number their own. `conflux status` names the one it holds. |
-| `apiBaseUrl` | absent means the default. |
+| `apiBaseUrl` | where enrolment and renewal are asked, as `--api` gave it: an absolute `https` URL. Absent means the default, `https://api.veilnet.com.au`. One that is not absolute, has no host, or is not `https` is refused at every start. |
 
 This file is the whole of what a reboot needs. Every `up`, `proxy` and `observe` rewrites
 it, so it is always the current desired state.

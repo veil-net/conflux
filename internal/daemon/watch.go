@@ -366,10 +366,10 @@ func (s *Supervisor) rebuild(ctx context.Context, cfg *config.Config, link bool)
 	// delivered.
 	_ = s.ctl.Stop(stopCtx)
 
-	// An ended link's rebuild is counted in the state bringUp writes anyway, where status
-	// reads it: a machine reopening its anchor every few minutes has a failing cable.
 	driver := fetchDriver(ctx, s.Dirs, cfg)
 
+	// An ended link's rebuild is counted in the state bringUp writes anyway, where status
+	// reads it: a machine reopening its anchor every few minutes has a failing cable.
 	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link, driver, nil)
 	if err != nil {
 		return err

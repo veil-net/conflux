@@ -431,108 +431,66 @@ func TestObservingAloneEnrolsFirst(t *testing.T) {
 	}
 }
 
-// TestTheObserverOutlivesAnAnchorThatCannotComeUp: beside an anchor, the observer starts
-// first, under the credential, and an anchor whose start fails for now leaves the daemon,
-// the observer and its inventory running, for the watcher to bring the anchor up later,
-// rather than ending the cycle and the inventory with it. The service manager is told the
-// unit started, or systemd would fail it after TimeoutStartSec and take the observer down
-// anyway; the marker, which says an anchor is up, is not written.
-func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
+// TestTheObserverOutlivesAnAnchorThatDoesNotComeUp: beside an anchor, the observer starts
+// first, under the credential, and an anchor whose start then fails -- for now, or refused for
+// good -- leaves the daemon, the observer and its inventory running, for the watcher to bring
+// the anchor up later, rather than ending the cycle and the inventory with it. A refusal for
+// good is the watcher's to count, as a rebuild's are, which gives the anchor up after
+// rebuildRefusals of them and keeps the observer (TestTheWatcherCountsTheStartsRefusal). The
+// service manager is told the unit started, or systemd would fail it after TimeoutStartSec and
+// take the observer down anyway; the marker, which says an anchor is up, is not written.
+func TestTheObserverOutlivesAnAnchorThatDoesNotComeUp(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
 	}
 
-	t.Setenv(fakeAnchorctlStatusEnv, "none")
-	t.Setenv(fakeAnchorctlObserverEnv, "running")
-	t.Setenv(fakeAnchorctlFailEnv, "start")
-	t.Setenv(fakeAnchordListenEnv, "1")
+	for name, refuse := range map[string]string{
+		"whose start fails for now":       fakeAnchorctlFailEnv,
+		"whose start is refused for good": fakeAnchorctlRefuseEnv, // an argument vector anchorctl will not take, exit 2
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlStatusEnv, "none")
+			t.Setenv(fakeAnchorctlObserverEnv, "running")
+			t.Setenv(refuse, "start")
+			t.Setenv(fakeAnchordListenEnv, "1")
 
-	s, log := supervised(t, "serve")
-	s.Ready = make(chan struct{})
+			s, log := supervised(t, "serve")
+			s.Ready = make(chan struct{})
 
-	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
-		Proxies: []string{"8080=127.0.0.1:1"}}
-	if err := config.Save(s.Dirs, cfg); err != nil {
-		t.Fatal(err)
-	}
+			cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
+				Proxies: []string{"8080=127.0.0.1:1"}}
+			if err := config.Save(s.Dirs, cfg); err != nil {
+				t.Fatal(err)
+			}
 
-	credentialed(t, s.Dirs)
+			credentialed(t, s.Dirs)
 
-	stop := cycling(t, s)
+			stop := cycling(t, s)
 
-	// Closed once the anchor's start has been refused and the cycle has decided to go on
-	// without it.
-	eventually(t, "the service manager being told the unit started", func() bool {
-		select {
-		case <-s.Ready:
-			return true
-		default:
-			return false
-		}
-	})
+			// Closed once the anchor's start has failed and the cycle has decided to go on
+			// without it.
+			eventually(t, "the service manager being told the unit started", func() bool {
+				select {
+				case <-s.Ready:
+					return true
+				default:
+					return false
+				}
+			})
 
-	if IsReady(s.Dirs) {
-		t.Error("ready with no anchor up")
-	}
+			if IsReady(s.Dirs) {
+				t.Error("ready with no anchor up")
+			}
 
-	if err := stop(); err != nil {
-		t.Errorf("the cycle ended with %v, where the anchor's failure should have left it running", err)
-	}
+			if err := stop(); err != nil {
+				t.Errorf("the cycle ended with %v, where the observer should have kept it running", err)
+			}
 
-	cmds := ran(t, log)
-	if o, a := slices.Index(cmds, "observe"), slices.Index(cmds, "start"); o < 0 || a < 0 || o > a {
-		t.Errorf("anchorctl ran %v; want the observer started, and then the anchor's start tried", cmds)
-	}
-}
-
-// TestTheObserverOutlivesAnAnchorRefusedForGood: beside a running observer, an anchor whose
-// start is refused for good -- an argument vector anchorctl will not take, exit 2 -- leaves the
-// cycle running, and with it the observer and its inventory, and the service manager is told
-// the unit started. The refusal is the watcher's to count, as a rebuild's are, which gives the
-// anchor up after rebuildRefusals of them and keeps the observer
-// (TestTheWatcherCountsTheStartsRefusal).
-func TestTheObserverOutlivesAnAnchorRefusedForGood(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a console control event needs the console this test shares")
-	}
-
-	t.Setenv(fakeAnchorctlStatusEnv, "none")
-	t.Setenv(fakeAnchorctlObserverEnv, "running")
-	t.Setenv(fakeAnchorctlRefuseEnv, "start")
-	t.Setenv(fakeAnchordListenEnv, "1")
-
-	s, log := supervised(t, "serve")
-	s.Ready = make(chan struct{})
-
-	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
-		Proxies: []string{"8080=127.0.0.1:1"}}
-	if err := config.Save(s.Dirs, cfg); err != nil {
-		t.Fatal(err)
-	}
-
-	credentialed(t, s.Dirs)
-
-	stop := cycling(t, s)
-
-	eventually(t, "the service manager being told the unit started", func() bool {
-		select {
-		case <-s.Ready:
-			return true
-		default:
-			return false
-		}
-	})
-
-	if IsReady(s.Dirs) {
-		t.Error("ready with no anchor up")
-	}
-
-	if err := stop(); err != nil {
-		t.Errorf("the cycle ended with %v, where the observer should have kept it running", err)
-	}
-
-	if cmds := ran(t, log); !slices.Contains(cmds, "observe") || !slices.Contains(cmds, "start") {
-		t.Errorf("anchorctl ran %v; want the observer started and the anchor's start tried", cmds)
+			cmds := ran(t, log)
+			if o, a := slices.Index(cmds, "observe"), slices.Index(cmds, "start"); o < 0 || a < 0 || o > a {
+				t.Errorf("anchorctl ran %v; want the observer started, and then the anchor's start tried", cmds)
+			}
+		})
 	}
 }
 

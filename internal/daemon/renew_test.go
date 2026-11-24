@@ -385,93 +385,71 @@ func TestAFailedInstallIsDueAgain(t *testing.T) {
 	}
 }
 
-// TestARenewalWithNoAnchorRunningStands: beside an anchor that is not running -- one that
-// could not start beside the observer, or one the watcher is rebuilding -- anchord answers a renewal with
-// "no anchor is running", which leaves nothing to install: the anchor starts on the renewed
-// chain on disk. The renewal stands, the state mirrors it, and the timer's next look asks the
-// issuer nothing, rather than renewing again every minute.
-func TestARenewalWithNoAnchorRunningStands(t *testing.T) {
-	t.Setenv(fakeAnchorctlStatusEnv, "none")
+// TestARenewalNothingRunningTakesStands: a renewal that nothing running takes is no failure.
+// Beside an anchor that is not running -- one that could not start beside the observer, or one
+// the watcher is rebuilding -- anchord answers it with "no anchor is running"; an observer
+// stopped by hand holds no credential to install it on, and anchorctl says so, where the anchor
+// beside it takes it. Either way what is not running starts on the renewed chain on disk: the
+// renewal stands, the state mirrors it, and the timer's next look asks the issuer nothing,
+// rather than renewing again every minute.
+func TestARenewalNothingRunningTakesStands(t *testing.T) {
+	for name, c := range map[string]struct {
+		env, value string   // what the stand-in anchorctl says is not running
+		observer   bool     // whether the machine observes
+		ran        []string // what anchorctl was asked, to install the renewal
+	}{
+		"with no anchor running":             {env: fakeAnchorctlStatusEnv, value: "none", ran: []string{"renew"}},
+		"beside an observer stopped by hand": {env: fakeAnchorctlObserverEnv, value: "stopped", observer: true, ran: []string{"renew", "observe"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(c.env, c.value)
 
-	is := newIssuer(t)
-	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
-	ctl := fakeCtl(t)
+			is := newIssuer(t)
+			d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
 
-	if err := RenewNow(t.Context(), d, ctl, nil); err != nil {
-		t.Errorf("RenewNow with no anchor running: %v", err)
-	}
+			if c.observer {
+				cfg := configOf(t, d)
+				cfg.Observer = &config.Observer{}
 
-	m := stored(t, d)
+				if err := config.Save(d, cfg); err != nil {
+					t.Fatal(err)
+				}
+			}
 
-	st, err := config.LoadState(d)
-	if err != nil {
-		t.Fatal(err)
-	}
+			log := filepath.Join(t.TempDir(), "anchorctl.log")
+			t.Setenv(fakeAnchorctlLogEnv, log)
 
-	if !st.IssuedAt.Equal(m.IssuedAt()) || !st.NotAfter.Equal(m.NotAfter()) || st.LastRenewalError != "" {
-		t.Errorf("the state (%v to %v, error %q) does not mirror the renewed manifest (%v to %v)",
-			st.IssuedAt, st.NotAfter, st.LastRenewalError, m.IssuedAt(), m.NotAfter())
-	}
+			ctl := fakeCtl(t)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-	defer cancel()
+			if err := RenewNow(t.Context(), d, ctl, nil); err != nil {
+				t.Errorf("RenewNow: %v", err)
+			}
 
-	(&Supervisor{Dirs: d, ctl: ctl}).renewLoop(ctx)
+			if cmds := ran(t, log); !slices.Equal(cmds, c.ran) {
+				t.Errorf("anchorctl ran %v; want %v", cmds, c.ran)
+			}
 
-	if n := is.calls.Load(); n != 1 {
-		t.Errorf("the issuer was asked %d times, want the one renewal", n)
-	}
-}
+			m := stored(t, d)
 
-// TestARenewalBesideAStoppedObserverStands: an observer stopped by hand holds no credential to
-// install a renewal on, and anchorctl says so. That leaves nothing to install -- the observer
-// starts on the renewed chain on disk -- and is no failure: the renewal stands, installed on
-// the anchor beside it, the state mirrors it, and the timer's next look asks the issuer nothing.
-func TestARenewalBesideAStoppedObserverStands(t *testing.T) {
-	t.Setenv(fakeAnchorctlObserverEnv, "stopped")
+			st, err := config.LoadState(d)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	is := newIssuer(t)
-	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+			if !st.IssuedAt.Equal(m.IssuedAt()) || !st.NotAfter.Equal(m.NotAfter()) || st.LastRenewalError != "" {
+				t.Errorf("the state (%v to %v, error %q) does not mirror the renewed manifest (%v to %v)",
+					st.IssuedAt, st.NotAfter, st.LastRenewalError, m.IssuedAt(), m.NotAfter())
+			}
 
-	cfg := configOf(t, d)
-	cfg.Observer = &config.Observer{}
+			ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+			defer cancel()
 
-	if err := config.Save(d, cfg); err != nil {
-		t.Fatal(err)
-	}
+			(&Supervisor{Dirs: d, ctl: ctl}).renewLoop(ctx)
 
-	log := filepath.Join(t.TempDir(), "anchorctl.log")
-	t.Setenv(fakeAnchorctlLogEnv, log)
-
-	ctl := fakeCtl(t)
-
-	if err := RenewNow(t.Context(), d, ctl, nil); err != nil {
-		t.Errorf("RenewNow beside a stopped observer: %v", err)
-	}
-
-	if cmds := ran(t, log); !slices.Contains(cmds, "renew") || !slices.Contains(cmds, "observe") {
-		t.Errorf("anchorctl ran %v; want the renewal installed on the anchor and offered to the observer", cmds)
-	}
-
-	m := stored(t, d)
-
-	st, err := config.LoadState(d)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !st.IssuedAt.Equal(m.IssuedAt()) || !st.NotAfter.Equal(m.NotAfter()) || st.LastRenewalError != "" {
-		t.Errorf("the state (%v to %v, error %q) does not mirror the renewed manifest (%v to %v)",
-			st.IssuedAt, st.NotAfter, st.LastRenewalError, m.IssuedAt(), m.NotAfter())
-	}
-
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-	defer cancel()
-
-	(&Supervisor{Dirs: d, ctl: ctl}).renewLoop(ctx)
-
-	if n := is.calls.Load(); n != 1 {
-		t.Errorf("the issuer was asked %d times, want the one renewal", n)
+			if n := is.calls.Load(); n != 1 {
+				t.Errorf("the issuer was asked %d times, want the one renewal", n)
+			}
+		})
 	}
 }
 

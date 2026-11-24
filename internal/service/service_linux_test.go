@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// TestEveryDropinIsRemoved: systemd reads drop-ins for the unit from /etc and from /run, an
-// administrator's and systemctl set-property's (system.control) alike, persistent and for
-// the boot, and any of them would make the unit that runs other than the one conflux writes.
-// Another unit's are left alone.
-func TestEveryDropinIsRemoved(t *testing.T) {
+// TestTheUnitsFourDropinDirectoriesAreRemoved: systemd reads drop-ins for the unit from /etc and
+// from /run, an administrator's and systemctl set-property's (system.control) alike, persistent
+// and for the boot, and any of them would make the unit that runs other than the one conflux
+// writes. Another unit's are left alone.
+func TestTheUnitsFourDropinDirectoriesAreRemoved(t *testing.T) {
 	root := t.TempDir()
 
 	dirs := []string{

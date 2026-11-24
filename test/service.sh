@@ -437,8 +437,9 @@ fi
 docker exec "$NAME" systemctl stop conflux.service
 
 # The service is the supervisor's to keep: started by systemd itself, with nothing typed, it
-# puts back a unit changed by hand and removes every drop-in that would change it -- written by
-# hand, or by systemctl set-property, each persistent in /etc or for the boot in /run.
+# puts back a unit changed by hand and removes the unit's four drop-in directories, in /etc and
+# /run, which would change it -- written by hand, or by systemctl set-property, each persistent in
+# /etc or for the boot in /run.
 say "a start by systemd puts the unit back and removes its drop-ins"
 dropins=(/etc/systemd/system/conflux.service.d /etc/systemd/system.control/conflux.service.d
   /run/systemd/system/conflux.service.d /run/systemd/system.control/conflux.service.d)

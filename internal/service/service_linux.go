@@ -22,9 +22,11 @@ const unitPath = "/etc/systemd/system/" + unitName
 // enabled means on disk.
 const wantsPath = "/etc/systemd/system/multi-user.target.wants/" + unitName
 
-// dropinDirs are where systemd reads drop-ins that change the unit: an administrator's, and
+// dropinDirs are the unit's four drop-in directories in /etc and /run: an administrator's, and
 // systemctl set-property's (system.control), each persistent in /etc and for the boot in /run.
-// None of them conflux's, so the unit that runs is the one conflux writes.
+// None of them conflux's, so the unit that runs is the one conflux writes. systemd reads others
+// -- a package's under /usr/lib and /usr/local/lib, and those for every service -- which nothing
+// of conflux's writes and nothing here removes.
 var dropinDirs = []string{
 	"/etc/systemd/system/" + unitName + ".d",
 	"/etc/systemd/system.control/" + unitName + ".d",
@@ -32,8 +34,8 @@ var dropinDirs = []string{
 	"/run/systemd/system.control/" + unitName + ".d",
 }
 
-// removeDropins removes every drop-in directory of the unit's under root, "/" but in a test,
-// and reports whether there was one.
+// removeDropins removes the unit's four drop-in directories under root, "/" but in a test, and
+// reports whether there was one.
 func removeDropins(root string) (bool, error) {
 	var (
 		found bool
@@ -73,7 +75,7 @@ func (s systemd) Install(exe string, args ...string) error {
 			"conflux registers with on Linux")
 	}
 
-	// A drop-in would make the unit that runs something other than this one.
+	// A drop-in in /etc or /run would make the unit that runs something other than this one.
 	dropins, err := removeDropins("/")
 	if err != nil {
 		return err
@@ -185,6 +187,6 @@ func (s systemd) Describe() string {
 
 func (systemd) LogHint() string { return "journalctl -u " + unitName + " -n 50" }
 
-// Reconcile is Install, which rewrites the unit only where it differs, removes every drop-in,
-// and starts nothing, so the running service may call it.
+// Reconcile is Install, which rewrites the unit only where it differs, removes the unit's four
+// drop-in directories, and starts nothing, so the running service may call it.
 func (systemd) Reconcile(exe string, args ...string) error { return systemd{}.Install(exe, args...) }

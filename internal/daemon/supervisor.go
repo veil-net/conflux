@@ -199,10 +199,18 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// in conflux's own form, with state.json, under the lock every writer of either holds.
 	cfgErr := s.canonical()
 
-	// The registration and the copy it runs, as the root is put back: whatever the
-	// configuration said, so a service with nothing to start yet still runs this conflux.
+	// The registration and the copy it runs, and the rest of the root, put back whatever the
+	// configuration said, so a service with nothing to start yet still runs this conflux, and a
+	// start that stops leaves the root as one that runs does: what is neither conflux's nor
+	// anchor's goes, and the root's own files get their owner and modes back -- never their
+	// bytes, so a file refused for good is left as it was written. A file that will not go is
+	// said and left, and costs no start.
 	if s.Reconcile != nil {
 		s.Reconcile()
+	}
+
+	if err := s.tidyRoot(); err != nil {
+		s.report().Warn("could not put %s back to what conflux keeps there: %v", s.Dirs.Root, err)
 	}
 
 	// Nothing to supervise, or nothing it will start on, before anything is extracted.
@@ -210,13 +218,6 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// same answer every five seconds.
 	if cfgErr != nil {
 		return cfgErr
-	}
-
-	// The rest of the root: what is neither conflux's nor anchor's goes, and the root's own
-	// files get their owner and modes back. A file that will not go is said and left, and
-	// costs no start.
-	if err := s.tidyRoot(); err != nil {
-		s.report().Warn("could not put %s back to what conflux keeps there: %v", s.Dirs.Root, err)
 	}
 
 	// Held to this build's digests, not only found whole: anchord runs from here as root,

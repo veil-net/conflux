@@ -66,8 +66,9 @@ func rootFiles(d paths.Dirs) []rootFile {
 // tidyRoot keeps the root's own entries to what conflux and anchor put there, removing
 // everything else but a temporary file young enough to be another conflux's write in
 // progress, and gives the root's own files back their owner and modes (restoreModes). Once a
-// start, as Run puts the root back: only the supervisor's own account can write there, so
-// nothing appears between one spawn and the next for it to take. The run directory a start
+// start, as Run puts the root back, a start that then stops on its configuration included: only
+// the supervisor's own account can write there, so nothing appears between one spawn and the
+// next for it to take. The run directory a start
 // empties whole, and the bin directory is libexec.Sweep's.
 func (s *Supervisor) tidyRoot() error {
 	return errors.Join(removeExcept(s.Dirs.Root, rootEntry), s.restoreModes())

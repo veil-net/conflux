@@ -36,3 +36,19 @@ func TestTidyPutsTheRootsFilesBackToTheirModes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// widen makes path readable by everybody, as a hand's chmod might.
+func widen(t *testing.T, path string) {
+	t.Helper()
+
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// restored reports whether path is the supervisor's alone again: 0600.
+func restored(path string) bool {
+	fi, err := os.Stat(path)
+
+	return err == nil && fi.Mode().Perm() == 0o600
+}

@@ -22,9 +22,10 @@ manager watches.
 At every boot the supervisor takes the root's `serve.lock` — one supervisor per root —
 stops any `anchord` a supervisor that died left running (below), empties `run/`, reads
 `conflux.json`, removes from the root whatever neither conflux nor anchor put there and gives
-the root's own files back their owner and modes ([config.md](config.md#where)), extracts the
-anchor pair if it is not already on disk and holds the one that is
-to this build's SHA-256s — a binary changed on disk is extracted again rather than run, and a
+the root's own files back their owner and modes ([config.md](config.md#where)) — a start that
+stops here, with nothing configured or a configuration it refuses, included, the refused file's
+bytes left as they were written — extracts the anchor pair if it is not already on disk and
+holds the one that is to this build's SHA-256s — a binary changed on disk is extracted again rather than run, and a
 pair whose files are as they were when extracted or last checked is taken on a stat of each,
 so a start reads it only when something touched it — writes a fresh bearer token,
 decides what `anchord` runs as — its own account, with exactly the capabilities its mode

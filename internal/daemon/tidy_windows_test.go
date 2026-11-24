@@ -17,11 +17,6 @@ func TestTidyGivesTheRootsFilesBackToTheAdministrators(t *testing.T) {
 	s := &Supervisor{Dirs: dirs(t)}
 	d := s.Dirs
 
-	users, err := windows.CreateWellKnownSid(windows.WinBuiltinUsersSid)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	files := []string{d.ConfigFile(), d.ServiceExecutable()}
 
 	for _, path := range files {
@@ -29,13 +24,7 @@ func TestTidyGivesTheRootsFilesBackToTheAdministrators(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := grantSID(path, users, windows.FILE_GENERIC_READ); err != nil {
-			t.Fatal(err)
-		}
-
-		if paths.OnlyAdmins(path) {
-			t.Fatalf("%s, granted to Users, reads as SYSTEM's and the Administrators' alone", path)
-		}
+		widen(t, path)
 	}
 
 	if err := s.tidyRoot(); err != nil {
@@ -43,8 +32,29 @@ func TestTidyGivesTheRootsFilesBackToTheAdministrators(t *testing.T) {
 	}
 
 	for _, path := range files {
-		if !paths.OnlyAdmins(path) {
+		if !restored(path) {
 			t.Errorf("%s still grants Users, or belongs to another account, after the root was tidied", path)
 		}
 	}
 }
+
+// widen grants Users read access to path, as somebody might since.
+func widen(t *testing.T, path string) {
+	t.Helper()
+
+	users, err := windows.CreateWellKnownSid(windows.WinBuiltinUsersSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := grantSID(path, users, windows.FILE_GENERIC_READ); err != nil {
+		t.Fatal(err)
+	}
+
+	if paths.OnlyAdmins(path) {
+		t.Fatalf("%s, granted to Users, reads as SYSTEM's and the Administrators' alone", path)
+	}
+}
+
+// restored reports whether path is SYSTEM's and the Administrators' alone again.
+func restored(path string) bool { return paths.OnlyAdmins(path) }

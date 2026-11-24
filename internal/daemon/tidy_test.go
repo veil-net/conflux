@@ -1,10 +1,13 @@
 package daemon
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 // TestTidyKeepsOnlyWhatIsConfluxsAndAnchors: the root, as a start puts it back, and both
@@ -71,5 +74,63 @@ func TestTidyKeepsOnlyWhatIsConfluxsAndAnchors(t *testing.T) {
 		if _, err := os.Lstat(path); (err == nil) != kept {
 			t.Errorf("%s: kept = %v, want %v", path, err == nil, kept)
 		}
+	}
+}
+
+// TestAStartThatStopsPutsTheRootBack: the root is put back at every start, one that then stops
+// included -- nothing configured, which exits 78, and a conflux.json refused for good, which exits
+// 70: what is neither conflux's nor anchor's goes, and the root's own files get their modes, and
+// on Windows their DACLs, back. Their modes and owners alone: a refused file keeps the bytes it
+// was written with.
+func TestAStartThatStopsPutsTheRootBack(t *testing.T) {
+	for name, tc := range map[string]struct {
+		config string // conflux.json, or none
+		stops  func(error) bool
+	}{
+		"with nothing configured": {stops: func(err error) bool { return errors.Is(err, ErrNotConfigured) }},
+		"refusing its configuration": {config: "{not json", stops: func(err error) bool {
+			return Permanent(err) && !errors.Is(err, ErrNotConfigured)
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := &Supervisor{Dirs: dirs(t)}
+			d := s.Dirs
+
+			files := map[string]string{d.ManifestFile(): "the identity"}
+			if tc.config != "" {
+				files[d.ConfigFile()] = tc.config
+			}
+
+			for path, content := range files {
+				if err := config.WriteFileAtomic(path, []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+
+				widen(t, path)
+			}
+
+			stray := filepath.Join(d.Root, "stray")
+			if err := os.WriteFile(stray, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := s.Run(t.Context()); !tc.stops(err) {
+				t.Fatalf("Run = %v", err)
+			}
+
+			if _, err := os.Lstat(stray); err == nil {
+				t.Error("a stray file outlived the start")
+			}
+
+			for path, content := range files {
+				if !restored(path) {
+					t.Errorf("%s was not given back its mode, or to SYSTEM and the Administrators", path)
+				}
+
+				if got, _ := os.ReadFile(path); string(got) != content {
+					t.Errorf("%s was rewritten: %q", path, got)
+				}
+			}
+		})
 	}
 }

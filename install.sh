@@ -131,7 +131,8 @@ rootpath() {
 # spelled. A /usr/bin/conflux that is not that link is left alone. A /usr/bin that cannot be
 # written -- macOS's -- is said, and not a failure: conflux is installed all the same, as it is
 # where root's PATH cannot be asked at all, or a link a run before made cannot be taken back,
-# each of which is said too, rather than nothing.
+# each of which is said too, rather than nothing. That link is said with the conflux root's PATH
+# finds before it, where it finds one: removing that one lets root's PATH find $exe.
 link() {
   if ! rootpath; then
     say "" "Could not ask $as for root's PATH: run the installer as root to link conflux for sudo, or type $exe by its full path under sudo."
@@ -143,7 +144,11 @@ link() {
   if [ -L "$sudolink" ] && [ "$(readlink "$sudolink")" = "$exe" ]; then
     # A run before made it, and root's PATH, just asked, does not find $exe through it.
     if ! asroot rm -f "$sudolink"; then
-      say "" "Could not remove $sudolink, which root's PATH does not find $exe through: type $exe by its full path under sudo."
+      if [ -n "$found" ]; then
+        say "" "Could not remove $sudolink, which root's PATH does not find $exe through, since it finds $found before ${sudolink%/*}: remove $found, and root's PATH then finds $exe, or type $exe by its full path under sudo."
+      else
+        say "" "Could not remove $sudolink, which root's PATH does not find $exe through: type $exe by its full path under sudo."
+      fi
       return 0
     fi
   else

@@ -34,7 +34,9 @@ password, as when nothing has asked for one yet, the script says so and asks for
 terminal, as the install itself does, so `curl … | sh` works too; where it cannot be asked even
 so, the password refused or no terminal to type it at, it says to run the script as root to link
 conflux. What it cannot have removed, the password refused — an earlier run's link, or a
-download it did not put in place — it says, and leaves. `install.ps1` does the same into
+download it did not put in place — it says, and leaves. It names with that link the conflux
+root's PATH finds before `/usr/bin`, where it finds one: removing that one lets root's PATH find
+the installed conflux. `install.ps1` does the same into
 `C:\Program Files\conflux` and adds that to the machine's PATH. `conflux update` run where neither has installed conflux puts
 it there the same way, the link or the PATH entry with it. The place is fixed, so that a
 terminal finds conflux by name, `conflux update` knows what to replace and `conflux uninstall`

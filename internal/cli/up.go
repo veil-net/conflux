@@ -78,8 +78,8 @@ func runUp(ctx context.Context, args []string) int {
 	fs.Var(&subnets, "subnet", subnetUsage)
 	fs.Var(&peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
 
-	if err := fs.Parse(args); err != nil {
-		return usageExit(err)
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	// An ephemeral run reads its credential first, and touches nothing of the machine's.

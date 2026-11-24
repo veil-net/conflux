@@ -215,8 +215,12 @@ func TestUsageIsOneStream(t *testing.T) {
 // TestAMistakeIsSaidOnStderr: a flag a command does not take, an argument too many or too few,
 // or a flag it cannot do without, is a mistake, said on stderr with the usage beneath it, which
 // leaves stdout to what the command was asked for. -h alone is answered on stdout
-// (TestUsageIsOneStream).
+// (TestUsageIsOneStream). An argument given to a command that takes flags alone is one:
+// `sudo conflux up mynet`, --taint forgotten, would otherwise mint a network of its own. Not
+// root, so a command that went on past its refusal is refused for privilege, not run.
 func TestAMistakeIsSaidOnStderr(t *testing.T) {
+	asRoot(t, false)
+
 	for _, c := range []struct {
 		args []string
 		says string
@@ -225,6 +229,12 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 		{[]string{"cert", "verify"}, "conflux cert verify —"},
 		{[]string{"enrol"}, "conflux enrol —"},
 		{[]string{"enrol", "--manifest", "node.b64", "stray"}, "conflux enrol —"},
+		{[]string{"up", "mynet"}, "conflux up —"},
+		{[]string{"up", "mynet", "--taint", "mynet"}, "conflux up —"},
+		{[]string{"install", "now"}, "conflux install —"},
+		{[]string{"down", "now"}, "conflux down —"},
+		{[]string{"uninstall", "yes"}, "conflux uninstall —"},
+		{[]string{"serve", "foreground"}, "conflux serve —"},
 		{[]string{"cert"}, "conflux cert —"},
 		{[]string{"cert", "ca"}, "conflux cert ca —"},
 		{[]string{"cert", "p12"}, "conflux cert p12 —"},

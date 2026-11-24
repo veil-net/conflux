@@ -43,8 +43,8 @@ func runInstall(ctx context.Context, args []string) int {
 		"Registers the service so this machine rejoins at boot. If a configuration\n"+
 		"already exists it is also started; if not, nothing is invented.\n")
 
-	if err := fs.Parse(args); err != nil {
-		return usageExit(err)
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("registering the boot service", "install", args); err != nil {
@@ -238,8 +238,8 @@ func runDown(_ context.Context, args []string) int {
 		"Leaves the boot service registered and the configuration in place. To remove\n"+
 		"those as well, that is conflux uninstall.\n")
 
-	if err := fs.Parse(args); err != nil {
-		return usageExit(err)
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("stopping the service", "down", args); err != nil {
@@ -287,9 +287,8 @@ func runUninstall(_ context.Context, args []string) int {
 
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
 
-	if err := fs.Parse(args); err != nil {
-		return usageExit(err)
-
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("removing the boot service", "uninstall", args); err != nil {

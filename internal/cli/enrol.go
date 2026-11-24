@@ -76,13 +76,13 @@ func runEnrol(_ context.Context, args []string) int {
 		"the API that issued it, as a base URL, overriding the one its renewal URL names")
 	ipv4 := fs.String("ipv4", "", "this machine's IPv4, overriding whatever the manifest allocated")
 
-	if err := fs.Parse(args); err != nil {
-		return usageExit(err)
-	}
-
 	// The document is --manifest's, and the verb takes no argument: one given is a mistake,
 	// said as a missing --manifest is, rather than ignored.
-	if *manifest == "" || fs.NArg() > 0 {
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
+	}
+
+	if *manifest == "" {
 		usageMistake(fs)
 
 		return ExitUsage

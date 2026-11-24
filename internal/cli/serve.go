@@ -23,8 +23,8 @@ func runServe(ctx context.Context, args []string) int {
 
 	foreground := fs.Bool("foreground", false, "stay in the foreground even where a service manager is available")
 
-	if err := fs.Parse(args); err != nil {
-		return usageExit(err)
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	// Where launchd started it, which keeps no output, to the system log.

@@ -3,11 +3,13 @@
 #
 # install registers the unit and does not start it; anchord runs as conflux's own account
 # with exactly what each mode and host needs, and as root only where the host demands it;
-# uninstall leaves nothing behind. Nothing enrols -- the configuration names an API that
-# answers nothing, so anchord stays up while the enrolment waits -- so this runs without
-# touching the API, which is what makes it the cheap one to run when the question is only
-# about the unit and what it starts. The observer needs no API at all: it is run alone, its
-# records read back from the inventory and from a collector, and beside each anchor.
+# uninstall leaves nothing behind. Until the observer's legs nothing enrols -- the
+# configuration names an API that answers nothing, so anchord stays up while the enrolment
+# waits -- which is what makes this the cheap one to run when the question is only about the
+# unit and what it starts. The observer runs only under a credential, so its legs enrol one
+# anonymous alpha credential at $VEILNET_API, in a random taint, as service-host.sh does, and
+# run under it: alone, its records read back from the inventory and from a collector, and
+# beside each anchor.
 #
 # The hosts it needs are made inside the container, so every branch is taken on every
 # runner: /dev/net/tun opened up or kept root's, and firewalld and iptables stood in for by
@@ -27,6 +29,12 @@ OTEL=${OTEL:-$NAME-otel}
 
 # The collector the observer's records are exported to: anchor's own suite runs this one.
 OTEL_IMAGE=${OTEL_IMAGE:-otel/opentelemetry-collector:0.162.0}
+
+# Where the observer's legs enrol their one credential, production's API when unset: it has to
+# be the tree the embedded anchord is pinned to, which CI names by the pull request's base. The
+# taint is random, so the credential reaches nobody else in the realm.
+API=${VEILNET_API:-https://api.veilnet.com.au}
+TAINT="cfx-svc-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 
 say() { printf '\n== %s\n' "$*"; }
 
@@ -104,12 +112,12 @@ exit 1
 SH
 
 # configure writes a configuration conflux could have written, in MODE, with any more
-# fields after it, pointed at that API.
-configure() { # MODE [FIELDS]
+# fields after it, in TAINT at API: by default pointed at that silent API.
+configure() { # MODE [FIELDS [TAINT API]]
   local extra=''
   [ "$1" = proxy ] && extra='"proxies":["8080=127.0.0.1:3000"],'
   docker exec -i "$NAME" sh -c "umask 077; cat > /var/lib/.conflux/conflux.json" <<JSON
-{"version":1,"mode":"$1",$extra${2:+$2,}"taints":["cfx-service-test"],"apiBaseUrl":"https://127.0.0.1:9443","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}
+{"version":1,"mode":"$1",$extra${2:+$2,}"taints":["${3:-cfx-service-test}"],"apiBaseUrl":"${4:-https://127.0.0.1:9443}","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}
 JSON
 }
 
@@ -279,23 +287,20 @@ start
 expect "userspace again" "uid=$uid caps=$(caps "$bufcap") nnp=1 groups=" "$bufrow"
 check_mode /var/lib/.conflux/anchor/carried "600 conflux conflux"
 
-# The observer, alone: no anchor, so nothing enrols, and anchord is given the capture and
-# nothing else -- CAP_NET_RAW, under no_new_privs, and no buffer capability, since no socket
-# is bound.
-say "observing alone, anchord has CAP_NET_RAW and nothing else, and enrols nothing"
-configure observe '"observer":{}'
-# Every connection to the silent API is a silent@ instance, and one is left for each, so a
-# count that grows is an enrolment tried. Taken once the last service has stopped.
-asked() { docker exec "$NAME" systemctl list-units --all --no-legend --plain 'silent@*.service' | wc -l; }
-docker exec "$NAME" systemctl stop conflux.service
-before=$(asked)
-[ "$before" -gt 0 ] || { echo "no earlier start reached the silent API, so its count proves nothing" >&2; exit 1; }
+# The observer runs only under a credential, checked as an anchor's start is, so its legs run
+# under one: anonymous, alpha, in this run's taint, enrolled at $API by the first of them, which
+# finds none, as `conflux observe` enrols one. Alone, there is no anchor, and anchord is given
+# the capture and nothing else -- CAP_NET_RAW, under no_new_privs, and no buffer capability,
+# since no socket is bound.
+say "observing alone, under a credential enrolled at $API in $TAINT, anchord has CAP_NET_RAW and nothing else"
+configure observe '"observer":{}' "$TAINT" "$API"
 start
 expect "observing" "uid=$uid caps=$(caps 0x2000) nnp=1 groups=" "CAP_NET_RAW to copy what the host's interfaces carry"
 
-# observing waits until status shows the observer capturing.
+# observing waits until status shows the observer capturing: the first time, once the enrolment
+# it starts after has answered.
 observing() {
-  for _ in $(seq 100); do
+  for _ in $(seq 300); do
     grep -q '^  observer *af_packet' <<<"$(docker exec "$NAME" conflux status 2>/dev/null)" && return 0
     sleep 0.2
   done
@@ -310,6 +315,8 @@ observing() {
 traffic() { docker exec "$NAME" sh -c 'conflux update --check >/dev/null 2>&1 || true'; }
 
 observing
+docker exec "$NAME" test -s /var/lib/.conflux/manifest.b64 \
+  || { echo "the observer is capturing, and there is no credential it runs under" >&2; exit 1; }
 traffic
 for _ in $(seq 60); do
   grep -q ' 443/tcp ' <<<"$(docker exec "$NAME" conflux inventory 2>/dev/null)" && break
@@ -320,8 +327,6 @@ docker exec "$NAME" conflux inventory | grep ' 443/tcp ' \
        docker exec "$NAME" conflux inventory >&2 || true; journal; exit 1; }
 grep -q '^  records *kept here' <<<"$(docker exec "$NAME" conflux status)" \
   || { echo "status does not say the records are kept here" >&2; exit 1; }
-[ $(( $(asked) - before )) -eq 0 ] \
-  || { echo "observing alone tried to enrol: the API was asked $(( $(asked) - before )) times" >&2; exit 1; }
 
 # Each record leaves as it is made, with no anchor: a collector that logs every record it is
 # sent, in detail, is the dashboard's side of it.
@@ -343,7 +348,7 @@ chmod 644 "$otelconf"
 docker run -d --name "$OTEL" -v "$otelconf:/etc/otel.yaml:ro" "$OTEL_IMAGE" --config /etc/otel.yaml >/dev/null
 collector=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$OTEL")
 [ -n "$collector" ] || { echo "the collector has no address" >&2; docker logs "$OTEL" >&2; exit 1; }
-configure observe "\"observer\":{},\"export\":{\"enabled\":true,\"endpoint\":\"$collector:4317\",\"insecure\":true,\"flows\":true}"
+configure observe "\"observer\":{},\"export\":{\"enabled\":true,\"endpoint\":\"$collector:4317\",\"insecure\":true,\"flows\":true}" "$TAINT" "$API"
 start
 expect "observing, exporting" "uid=$uid caps=$(caps 0x2000) nnp=1 groups=" "CAP_NET_RAW to copy what the host's interfaces carry"
 observing
@@ -357,13 +362,14 @@ grep -q 'anchor.observed_flow.key_exchange' <<<"$(docker logs "$OTEL" 2>&1)" \
        docker logs "$OTEL" 2>&1 | tail -20 >&2; journal; exit 1; }
 docker rm -f "$OTEL" >/dev/null
 
-# Beside an anchor, the capture is added to what the anchor's mode is given.
+# Beside an anchor, under the same credential, the capture is added to what the anchor's mode
+# is given.
 say "the observer beside an anchor adds CAP_NET_RAW to what its mode has"
-configure proxy '"observer":{}'
+configure proxy '"observer":{}' "$TAINT" "$API"
 start
 expect "userspace and observing" "uid=$uid caps=$(caps "0x2000|$bufcap") nnp=1 groups=" "CAP_NET_RAW to copy"
 observing
-configure tun '"observer":{}'
+configure tun '"observer":{}' "$TAINT" "$API"
 start
 expect "tun and observing" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
 observing

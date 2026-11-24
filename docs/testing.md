@@ -107,7 +107,7 @@ built `conflux` in beside it, then:
 
 ```console
 $ make anchor-bins && make integration   # the whole suite, four nodes
-$ make service-test                      # or just the unit, which enrols nothing
+$ make service-test                      # or just the unit
 ```
 
 By hand, which is what those run:
@@ -146,17 +146,19 @@ the overlay, the pings and the reboot are all proved of an anchord that is not r
 image sets `/dev/net/tun` to `0666` at every boot through `tmpfiles.d`, as a stock host's
 udev leaves it, so this holds whatever the runner's own device is.
 
-All of that is `make integration`. `make service-test` is the unit on its own and enrols
-nothing: `install` registers it without starting anything, the unit runs the root-only
-copy in `/var/lib/.conflux` rather than the file conflux was run from, and `uninstall`
-leaves no unit file, no `wants` link, no `/var/lib/.conflux`, no `conflux` account and no
-`/usr/local/bin/conflux`.
+All of that is `make integration`. `make service-test` is the unit on its own, and enrols
+once, for the observer: `install` registers it without starting anything, the unit runs the
+root-only copy in `/var/lib/.conflux` rather than the file conflux was run from, and
+`uninstall` leaves no unit file, no `wants` link, no `/var/lib/.conflux`, no `conflux` account
+and no `/usr/local/bin/conflux`.
 Both build the image first, and CI runs the same command a developer does.
 
-In between, it takes every branch of what `anchord` runs as, under the real unit. Its
-configuration names an API that a `silent.socket` in the container accepts and never
-answers, so `anchord` stays up while the enrolment waits, and each leg reads its uid,
-capabilities, `no_new_privs` and groups from `/proc` and the reason from `status`:
+In between, it takes every branch of what `anchord` runs as, under the real unit. Until the
+observer's legs its configuration names an API that a `silent.socket` in the container accepts
+and never answers, so `anchord` stays up while the enrolment waits. The observer runs only under
+a credential, so its legs run under one anonymous alpha credential, enrolled by the first of
+them at `$VEILNET_API` in a random taint. Each leg reads anchord's uid, capabilities,
+`no_new_privs` and groups from `/proc` and the reason from `status`:
 
 | leg | anchord |
 |---|---|
@@ -169,6 +171,9 @@ capabilities, `no_new_privs` and groups from `/proc` and the reason from `status
 | stand-ins for firewalld and for legacy iptables | root, naming each |
 | a stand-in for iptables on nf_tables, no nft | the account with `CAP_NET_ADMIN` and `CAP_NET_RAW` |
 | back to userspace | the account, starting from root's state, as its own |
+| observing alone, enrolling its credential | the account with `CAP_NET_RAW` alone, `no_new_privs`; status shows the capture (`af_packet`) and the records kept here, the inventory a connection to port 443, and `manifest.b64` holds the credential |
+| observing alone, exporting | the same, with every record reaching an OpenTelemetry collector as it is made |
+| observing beside a userspace and a TUN anchor | `CAP_NET_RAW` added to what each mode has, under the same credential |
 | `start` over a unit changed by hand | the unit replaced by this conflux's |
 | a start by systemd over a unit changed by hand and a drop-in | the unit put back and the drop-in directory removed, by the supervisor itself |
 | an account named `conflux` that conflux did not make | root, saying so; `uninstall` leaves the account |
@@ -467,7 +472,8 @@ The shape of the exchange is written down once, in
   have no runner, so the watcher's *reopen* path is reasoned about rather than run.
 - **A Windows TUN, and an anchor that runs.** The `platforms` job starts the supervisor
   under the SCM and launchd, and an `anchord` as `LOCAL SERVICE` and `_conflux` that answers
-  on its socket, but none enrols, and no job opens a wintun interface.
+  on its socket, but no anchor comes up there — the one credential enrolled is the observer's —
+  and no job opens a wintun interface.
 
 - **`conflux cert` against OpenSSL.** OpenSSL 3.5 is the first to read ML-DSA and no runner
   ships it, so the interop in [cert.md](cert.md#checked-against-openssl) was checked by hand,

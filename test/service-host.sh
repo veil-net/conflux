@@ -8,9 +8,11 @@
 # an account of its own -- _conflux on macOS, LOCAL SERVICE on Windows -- an observing one
 # captures as that account, given only what the capture needs, and uninstall leaves nothing
 # behind: launchd's disabled database, the SCM's entry, the account and the BPF devices'
-# access included. Nothing is enrolled -- the configuration names an API that answers nothing --
-# so it needs no API and no anchor, and takes seconds. It runs on the machine itself,
-# which is why it is for a CI runner that is thrown away afterwards.
+# access included. The configurations name an API that answers nothing, but for the observing
+# leg's: the observer runs only under a credential, so that leg enrols one anonymous alpha
+# credential at $VEILNET_API, in a random taint, and nothing else is enrolled. It needs no
+# anchor, and takes seconds. It runs on the machine itself, which is why it is for a CI runner
+# that is thrown away afterwards.
 #
 # bash 3.2, which is what a Mac has, and Git Bash on Windows.
 set -euo pipefail
@@ -166,7 +168,7 @@ case $out in
   *"anchord      $who"*) ;;
   *) fail "anchord does not observe as its own account with only the capture" ;;
 esac
-[ ! -e "$root/manifest.b64" ] || fail "observing alone enrolled"
+[ -s "$root/manifest.b64" ] || fail "the observer is capturing, and there is no credential it runs under"
 if [ "$os" = darwin ]; then
   bpf=$(stat -f '%Sg %Sp' /dev/bpf0)
   [ "$bpf" = "_conflux crw-r-----" ] || fail "/dev/bpf0 is $bpf while _conflux observes, want _conflux crw-r-----"

@@ -283,8 +283,8 @@ image: dist
 	@echo "  built $(IMAGE) from $(DIST)/conflux-linux-amd64"
 
 # The boot service on its own: install registers without starting, uninstall leaves
-# nothing. Cheaper than `integration` and it enrols nothing, so it is the one to run
-# when the question is only about the unit.
+# nothing. Cheaper than `integration`, enrolling once, for the observer, so it is the one
+# to run when the question is only about the unit.
 service-test: image
 	@IMAGE=$(IMAGE) ./test/service.sh
 

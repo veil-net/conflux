@@ -82,10 +82,10 @@ func TestUninstallTakesTheInstalledConflux(t *testing.T) {
 // PATH holds now: where the installed file's directory is on it, before the link's or after it,
 // that conflux removed, or the installed file typed by its full path; where only the link's is,
 // that conflux removed before the link is made by hand -- the line that makes it said, not the
-// installer, which would fetch the release and move a dev build off its channel -- or the full
-// path; and where neither is, the full path alone. As install.sh does, it makes none where that
-// PATH finds the installed file, and leaves a file of the link's name that is not that link
-// alone, saying so, with the same ways out. What the PATH would find once the other is removed
+// installer, which would fetch the release in place of a dev build update --dev put there -- or
+// the full path; and where neither is, the full path alone. As install.sh does, it makes none
+// where that PATH finds the installed file, and leaves a file of the link's name that is not that
+// link alone, saying so, with the same ways out. What the PATH would find once the other is removed
 // is never said, nor the ln line where the link's directory is not on it. Each PATH is the test's
 // own directories, the link's among them as /usr/bin is on every root's but where a case leaves
 // it out, so no conflux of the machine's is found.

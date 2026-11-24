@@ -60,11 +60,9 @@ $ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh 
 conflux's `dev` replaces, with anchor's own dev build inside it, for trying what the next
 release holds before it is released. Nothing installs it unless asked to by name. Its anchor is
 pinned to the dev tree, which only `https://api-dev.veilnet.com.au` enrols in, so it is brought
-up with `--api https://api-dev.veilnet.com.au`. `conflux update` on it moves to the newest dev
-build, never to `latest`: an update stays on the installed build's channel, whichever conflux
-runs it, since the release's anchor is pinned to the production tree, where the dev build's
-credential is not valid. Moving between the
-two is the installer's, by name, and the machine enrols again in the other tree.
+up with `--api https://api-dev.veilnet.com.au`. `conflux update --dev` replaces it with the
+newest dev build, once asked at a terminal; `conflux update` replaces it with the `latest`
+release, whatever is installed ([commands.md](commands.md#conflux-update)).
 
 The BSDs have no `curl` in the base system, and the script uses whatever downloader it
 finds, so it can be fetched with theirs:
@@ -151,9 +149,10 @@ under `daemon(8)` on FreeBSD, `rcctl`-enabled on OpenBSD. See [service.md](servi
 $ sudo conflux update
 ```
 
-`update` replaces the installed conflux with the newest build of its channel — the `latest`
-release's, or a dev build's newest `dev-latest` — verified the same way, and moves the boot service onto it: a running anchor is restarted on the new conflux, and a
-stopped one starts on it next time. See [commands.md](commands.md#conflux-update).
+`update` replaces the installed conflux with the newest release, `latest`, or with `--dev`,
+once asked at a terminal, the newest dev build, `dev-latest`, verified the same way, and moves
+the boot service onto it: a running anchor is restarted on the new conflux, and a stopped one
+starts on it next time. See [commands.md](commands.md#conflux-update).
 Running the install script again, or replacing the binary by hand, replaces the binary
 and leaves the service on the old one; restart it onto the new one:
 

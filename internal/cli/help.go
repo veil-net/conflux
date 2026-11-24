@@ -121,10 +121,6 @@ func printAnchorctlUsage(ctx context.Context) {
 	ui.Printf("\n%s\n\n%s\n", strings.Repeat("─", 72), strings.TrimSpace(out))
 }
 
-// devBuild starts the line `conflux version` gives a dev build, which `conflux update` reads
-// off the installed conflux to follow its channel.
-const devBuild = "dev build:"
-
 // runVersion reports conflux and the anchor pair it carries. The digests are here
 // so a bug report names the exact binaries, and so a user can check what they got
 // against a release note without running it.
@@ -142,7 +138,7 @@ func runVersion(_ context.Context, args []string) int {
 	ui.Println(version.String())
 
 	if version.Dev() {
-		ui.Println(devBuild + " anchor's dev-latest, pinned to the dev tree")
+		ui.Println("dev build: anchor's dev-latest, pinned to the dev tree")
 	}
 
 	ui.Println("fips140 " + version.FIPS())

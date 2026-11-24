@@ -537,28 +537,34 @@ switches FIPS 140-3 mode off; see [security.md](security.md#fips-140-3-and-cmvp)
 
 ```
 conflux update
-conflux update --check
+conflux update --dev
+conflux update [--dev] --check
 ```
 
 Replaces the installed conflux — `/usr/local/bin/conflux`, or
 `%ProgramFiles%\conflux\conflux.exe` on Windows, whichever conflux runs the update — with the
-newest build of its own channel for this platform, and moves the boot service onto it. The
-installed conflux decides, whichever conflux runs the update: it is run for its `version`,
-which says when it is a dev build. A release updates to the `latest` release of
-[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest), and a dev build to the
-newest dev build, the pre-release `dev-latest`. With nothing installed, or an installed file
-that does not run and so cannot say, the channel is that of the conflux running the update, and
-it says so. Nothing crosses from one to the other: a dev build's anchor is pinned to the dev
-tree and a release's to the production tree, and the credential the machine holds is valid in
-one alone.
-Moving between them is the install script's, by name ([install.md](install.md)), and a new
-identity. Only when typed: nothing checks on a schedule, so a machine changes version when
-somebody decides it should.
+newest release for this platform, the `latest` release of
+[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest), whatever build is
+installed or running, and moves the boot service onto it. It says what is installed: what the
+installed file says it is when run for its `version`, or that nothing is, or that it does not
+run.
+
+`--dev` takes the newest dev build instead: the pre-release `dev-latest`, built from conflux's
+`dev` branch with anchor's dev build inside it. Its anchor is pinned to the dev tree
+(`https://api-dev.veilnet.com.au`), so a credential from the production tree, which a release
+enrols in, does not work with it ([testing.md](testing.md#the-genesis-node)). So `--dev` asks
+first: at a terminal it says what a dev build is and asks `Install the dev build? [y/N]`, where
+only `y` or `yes` goes on, and anything else, the end of input included, changes nothing and
+exits 2; with no terminal to ask at it is refused, exit 1, and no flag gets past that. It asks
+once there is a dev build to install, named above the question, after the check for root and
+before anything is downloaded. Only when typed: nothing checks on a schedule, so a machine
+changes version when somebody decides it should.
 
 "Up to date" is a digest rather than a version string. The installed file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge
 that leaves `VERSION` alone publishes) is an update too. `--check` says which, names
-the release and the commit it was built from, and changes nothing.
+the release, or with `--dev` the dev build, and the commit it was built from, and changes
+nothing, so it asks nothing.
 
 An update is held to the SHA-256 the release document lists for the asset, which the
 API answers directly; the binary comes through GitHub's redirect to its storage and is
@@ -578,10 +584,10 @@ removed; where it holds `/usr/bin` alone, the other removed and then the link ma
 with the line the update says (`sudo ln -s /usr/local/bin/conflux /usr/bin/conflux`); either way,
 or conflux typed by its full path under `sudo`, which is all it says where that PATH holds
 neither. An update, finding conflux installed, makes no link, and `install.sh` run again would
-fetch the `latest` release, moving a dev build off its channel. A `/usr/bin/conflux` that is not
-that link is left alone, and said, with the same ways out: where that PATH finds it in conflux's
-place, it is to be removed, alone where that PATH holds `/usr/local/bin` too, and otherwise
-before the link is made the same way; where that PATH finds another conflux first and holds
+fetch the `latest` release, in place of a dev build `--dev` put there. A `/usr/bin/conflux` that
+is not that link is left alone, and said, with the same ways out: where that PATH finds it in
+conflux's place, it is to be removed, alone where that PATH holds `/usr/local/bin` too, and
+otherwise before the link is made the same way; where that PATH finds another conflux first and holds
 `/usr/local/bin`, that one is to be removed; where that PATH finds no conflux at all, the file
 being none it can run, a link to nothing say, and holds `/usr/bin`, it is to be removed before
 the link is made the same way; and otherwise conflux is to be typed by its full path alone.
@@ -589,7 +595,9 @@ No token is needed or sent: the repository is public.
 
 | Situation | |
 |---|---|
-| the installed conflux is its channel's newest build | says so, exit 0, nothing changed |
+| the installed conflux is the newest release, or with `--dev` the newest dev build | says so, exit 0, nothing changed, nothing asked |
+| `--dev`, declined at the terminal | says so, exit 2, nothing changed |
+| `--dev` with no terminal to ask at | refused, exit 1, nothing changed |
 | the anchor is running | the new conflux's `start` restarts it on the new version, and its exit code is `update`'s |
 | installed, not running | left stopped, as `down` left it; the boot service's copy is refreshed, so it starts on the new version next time |
 | no boot service | the installed conflux is replaced, and that is all |
@@ -665,7 +673,7 @@ other refusal — passes through untouched.
 |---|---|
 | 0 | success |
 | 1 | failure |
-| 2 | usage: a flag that does not parse, a command given too few or too many arguments (`cert`'s commands, and `enrol` given no `--manifest`; and a stray argument, named on a line of its own, given to `up`, `install`, `down`, `uninstall`, `serve`, `start`, `renew`, `update`, `observe`, `version` or `enrol`, which take flags and nothing else), and `cert`, `cert ca` or `cert p12` given no command, said on stderr with the usage, or the list, beneath it. And a refusal of what was typed, said on stderr in a line of its own: an option conflux does not have, a `cert` command that does not exist, anchorctl's `stop` or `restart`, a flag `start`, `renew`, `observe` or `proxy` does not have (anchorctl has commands of those names, and the line says how to reach them), `proxy` with nothing to serve, `observe` where there is no capture, `uninstall` beside a live ephemeral run, or what asks to be confirmed — `uninstall`, `observe` in an anchor's place — and was not. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
+| 2 | usage: a flag that does not parse, a command given too few or too many arguments (`cert`'s commands, and `enrol` given no `--manifest`; and a stray argument, named on a line of its own, given to `up`, `install`, `down`, `uninstall`, `serve`, `start`, `renew`, `update`, `observe`, `version` or `enrol`, which take flags and nothing else), and `cert`, `cert ca` or `cert p12` given no command, said on stderr with the usage, or the list, beneath it. And a refusal of what was typed, said on stderr in a line of its own: an option conflux does not have, a `cert` command that does not exist, anchorctl's `stop` or `restart`, a flag `start`, `renew`, `observe` or `proxy` does not have (anchorctl has commands of those names, and the line says how to reach them), `proxy` with nothing to serve, `observe` where there is no capture, `uninstall` beside a live ephemeral run, or what asks to be confirmed — `uninstall`, `observe` in an anchor's place, `update --dev` at a terminal — and was not. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
 | 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
 | 13 | needs root or Administrator, or a `status` that cannot read the configuration, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |

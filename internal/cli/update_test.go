@@ -17,6 +17,7 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
+	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/update"
 	"github.com/veil-net/conflux/internal/version"
 )
@@ -24,7 +25,8 @@ import (
 // serveRelease stands in for conflux's two releases, `latest` and the pre-release `dev-latest`,
 // each holding body as this platform's binary, and points `conflux update` at them, at exe as
 // the file to replace, and on Unix at a link of the test's own as the one it makes for sudo
-// (pointSudoLink). It returns the tags an update asked for, in order.
+// (pointSudoLink). It returns what an update asked it for, in order: the tag of each release it
+// read, and "download" for each binary it fetched.
 func serveRelease(t *testing.T, body []byte, exe string) *[]string {
 	t.Helper()
 
@@ -59,6 +61,10 @@ func serveRelease(t *testing.T, body []byte, exe string) *[]string {
 		})
 	})
 	mux.HandleFunc("/repos/veil-net/conflux/releases/assets/7", func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		asked = append(asked, "download")
+		mu.Unlock()
+
 		_, _ = w.Write(body)
 	})
 
@@ -204,84 +210,223 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 	}
 }
 
-// TestAnUpdateFollowsTheInstalledConfluxsChannel: an update replaces the installed conflux with
-// the newest build of that conflux's channel -- `latest` for a release, `dev-latest` for a dev
-// build, as its `version` says -- whichever channel the conflux running the update is on: a dev
-// build's anchor is pinned to the dev tree and a release's to the production tree, and the
-// credential the machine holds is valid in the installed one's alone. So nothing is asked
-// first, and no flag crosses from one to the other.
-func TestAnUpdateFollowsTheInstalledConfluxsChannel(t *testing.T) {
+// TestAPlainUpdateTakesTheRelease: conflux update replaces the installed conflux with the newest
+// release, `latest`, whatever is installed or running -- here a dev build, as its `version` says,
+// run by a dev build -- and asks nothing first, at a terminal as off one.
+func TestAPlainUpdateTakesTheRelease(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	asRoot(t, false)
+	asRoot(t, true)
 	keepChannel(t)
+	answer(t, "") // a terminal nothing is typed at, which would answer a question no
 
-	for _, dev := range []bool{false, true} {
-		exe := filepath.Join(t.TempDir(), "conflux")
-		says := "conflux 1.0.0 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH
-		script := "#!/bin/sh\necho '" + says + "'\n"
-		want, running := "latest", "dev"
+	version.Channel = "dev"
 
-		if dev {
-			script += "echo \"dev build: anchor's dev-latest, pinned to the dev tree\"\n"
-			want, running = "dev-latest", ""
-		}
+	exe := filepath.Join(t.TempDir(), "conflux")
+	says := "conflux 1.0.0 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH
+	script := "#!/bin/sh\necho '" + says + "'\necho \"dev build: anchor's dev-latest, pinned to the dev tree\"\n"
 
-		if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
-			t.Fatal(err)
-		}
-
-		version.Channel = running
-		asked := serveRelease(t, []byte("\x7fELF the newest build"), exe)
-
-		out, errOut, code := capture(t, "update", "--check")
-		if code != ExitOK || !slices.Equal(*asked, []string{want}) || !strings.Contains(out, exe+" is "+says) {
-			t.Errorf("update --check of an installed dev build %v, run by channel %q, exited %d, reading %q:\n%s%s",
-				dev, running, code, *asked, out, errOut)
-		}
-
-		// Nothing more to ask for: it goes on to what any update needs, root, here refused.
-		if _, errOut, code := capture(t, "update"); code != ExitDenied {
-			t.Errorf("update of an installed dev build %v exited %d, want %d:\n%s", dev, code, ExitDenied, errOut)
-		}
+	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
 	}
 
-	if _, _, code := capture(t, "update", "--yes"); code != ExitUsage {
-		t.Errorf("update --yes exited %d, want %d: no flag crosses channels", code, ExitUsage)
+	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
+	asked := serveRelease(t, newer, exe)
+
+	out, errOut, code := capture(t, "update", "--check")
+	if code != ExitOK || !slices.Equal(*asked, []string{"latest"}) ||
+		!strings.Contains(out, exe+" is "+says+".\nThe newest release is latest (9.9.9), built from 0aea0f77bb77.") {
+		t.Errorf("update --check of an installed dev build, run by one, exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
+	}
+
+	*asked = nil
+
+	out, errOut, code = capture(t, "update")
+	if code != ExitOK || !slices.Equal(*asked, []string{"latest", "download"}) || strings.Contains(out, "[y/N]") ||
+		!strings.Contains(out, "Updated "+exe+": conflux 9.9.9") {
+		t.Errorf("update of an installed dev build, run by one, exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
+	}
+
+	if got, _ := os.ReadFile(exe); string(got) != string(newer) {
+		t.Errorf("the executable holds %q after the update", got)
 	}
 }
 
-// TestAnUpdateWithNoInstalledChannelFollowsThisBuild: with nothing installed, or an installed
-// file that does not run and so cannot say what it is, the conflux running the update decides
-// the channel, and says which it went by.
-func TestAnUpdateWithNoInstalledChannelFollowsThisBuild(t *testing.T) {
-	keepChannel(t)
+// TestADevUpdateIsRefusedOffATerminal: conflux update --dev asks before it installs a dev build,
+// and where there is no terminal to ask at it refuses, as up refuses an IPv4 nobody can give,
+// whatever stdin holds: nothing is downloaded and nothing changes. No flag gets past it.
+func TestADevUpdateIsRefusedOffATerminal(t *testing.T) {
+	asRoot(t, true)
 
-	for channel, want := range map[string]string{"": "latest", "dev": "dev-latest"} {
-		version.Channel = channel
+	was := ui.In
+	ui.In = strings.NewReader("y\n")
 
-		exe := filepath.Join(t.TempDir(), "conflux")
-		asked := serveRelease(t, []byte("\x7fELF the newest build"), exe)
+	t.Cleanup(func() { ui.In = was })
 
-		out, _, code := capture(t, "update", "--check")
-		if code != ExitOK || !slices.Equal(*asked, []string{want}) || !strings.Contains(out, "Nothing is installed at "+exe) {
-			t.Errorf("update --check with nothing installed, on channel %q, exited %d, reading %q:\n%s", channel, code, *asked, out)
-		}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "conflux")
+	old := []byte("\x7fELF an older conflux")
 
-		if err := os.WriteFile(exe, []byte("\x7fELF no conflux that runs"), 0o755); err != nil {
+	if err := os.WriteFile(exe, old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	asked := serveRelease(t, []byte("\x7fELF the newest dev build"), exe)
+
+	out, errOut, code := capture(t, "update", "--dev")
+	if code != ExitError || !slices.Equal(*asked, []string{"dev-latest"}) || strings.Contains(out, "[y/N]") ||
+		!strings.Contains(errOut, "update --dev asks before it installs a dev build, and there is no terminal to ask at") {
+		t.Errorf("update --dev off a terminal exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
+	}
+
+	if got, _ := os.ReadFile(exe); string(got) != string(old) {
+		t.Error("update --dev off a terminal changed the executable")
+	}
+
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("update --dev off a terminal left %d files where there was one", len(entries))
+	}
+}
+
+// TestADevUpdateAsksFirst: at a terminal, conflux update --dev says what a dev build is -- its
+// anchor pinned to the dev tree, where a credential from the production tree does not work --
+// and asks before it downloads anything. y or yes takes the newest dev build, `dev-latest`; any
+// other answer, nothing typed and the end of input among them, changes nothing, said in a line,
+// and exits 2, as a declined observe or uninstall does. Not root, it is refused for privilege
+// before it asks, so the command typed again under sudo asks once.
+func TestADevUpdateAsksFirst(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in conflux is a shell script")
+	}
+
+	old := []byte("#!/bin/sh\necho conflux 1.0.0 old\n")
+	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
+
+	installed := func(t *testing.T) (dir, exe string) {
+		t.Helper()
+
+		dir = t.TempDir()
+		exe = filepath.Join(dir, "conflux")
+
+		if err := os.WriteFile(exe, old, 0o755); err != nil {
 			t.Fatal(err)
 		}
 
+		return dir, exe
+	}
+
+	for name, c := range map[string]struct {
+		typed string
+		takes bool
+	}{
+		"y": {"y\n", true}, "yes": {"YES\n", true}, "n": {"n\n", false}, "nothing typed": {"\n", false},
+		"the end of input": {"", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			asRoot(t, true)
+			answer(t, c.typed)
+
+			dir, exe := installed(t)
+			asked := serveRelease(t, newer, exe)
+
+			out, errOut, code := capture(t, "update", "--dev")
+
+			for _, want := range []string{
+				"The newest dev build is dev-latest (9.9.9), built from 0aea0f77bb77.",
+				"pinned to the dev tree", "production tree", "Install the dev build? [y/N]",
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("update --dev should say %q before it asks; it said:\n%s", want, out)
+				}
+			}
+
+			got, _ := os.ReadFile(exe)
+
+			if c.takes {
+				if code != ExitOK || !slices.Equal(*asked, []string{"dev-latest", "download"}) || string(got) != string(newer) ||
+					!strings.Contains(out, "Updated "+exe+": conflux 9.9.9") {
+					t.Errorf("update --dev answered %q exited %d, asking for %q, the executable holding %q:\n%s%s",
+						c.typed, code, *asked, got, out, errOut)
+				}
+
+				return
+			}
+
+			if code != ExitUsage || !slices.Equal(*asked, []string{"dev-latest"}) || string(got) != string(old) ||
+				!strings.Contains(errOut, "nothing changed") {
+				t.Errorf("update --dev answered %q exited %d, asking for %q, the executable holding %q:\n%s%s",
+					c.typed, code, *asked, got, out, errOut)
+			}
+
+			if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+				t.Errorf("update --dev answered %q left %d files where there was one", c.typed, len(entries))
+			}
+		})
+	}
+
+	t.Run("not root", func(t *testing.T) {
+		asRoot(t, false)
+		answer(t, "y\n")
+
+		_, exe := installed(t)
+		asked := serveRelease(t, newer, exe)
+
+		out, errOut, code := capture(t, "update", "--dev")
+		if code != ExitDenied || strings.Contains(out, "[y/N]") || slices.Contains(*asked, "download") ||
+			!strings.Contains(errOut, "conflux update --dev") {
+			t.Errorf("update --dev, not root, exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
+		}
+	})
+}
+
+// TestADevCheckAsksNothing: conflux update --dev --check names the newest dev build, and the
+// command that installs it, and changes nothing, so it asks nothing, at a terminal too, and needs
+// no root. What is installed is said: nothing, then a file that does not run.
+func TestADevCheckAsksNothing(t *testing.T) {
+	asRoot(t, false)
+	answer(t, "y\n")
+
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "conflux")
+	asked := serveRelease(t, []byte("\x7fELF the newest dev build"), exe)
+	notConflux := []byte("\x7fELF no conflux that runs")
+
+	for _, installed := range []string{"Nothing is installed at " + exe + ".", exe + " does not run here"} {
 		*asked = nil
 
-		out, _, code = capture(t, "update", "--check")
-		if code != ExitOK || !slices.Equal(*asked, []string{want}) || !strings.Contains(out, exe+" does not run") {
-			t.Errorf("update --check of an installed file that does not run, on channel %q, exited %d, reading %q:\n%s",
-				channel, code, *asked, out)
+		out, errOut, code := capture(t, "update", "--dev", "--check")
+		if code != ExitOK || !slices.Equal(*asked, []string{"dev-latest"}) || strings.Contains(out, "[y/N]") ||
+			!strings.Contains(out, installed) ||
+			!strings.Contains(out, "The newest dev build is dev-latest (9.9.9), built from 0aea0f77bb77.") ||
+			!strings.Contains(out, "conflux update --dev") {
+			t.Errorf("update --dev --check exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
+		}
+
+		if err := os.WriteFile(exe, notConflux, 0o755); err != nil {
+			t.Fatal(err)
 		}
 	}
+
+	if got, _ := os.ReadFile(exe); string(got) != string(notConflux) {
+		t.Error("update --dev --check changed the executable")
+	}
+
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("update --dev --check left %d files where there was one", len(entries))
+	}
+}
+
+// answer makes this test's stdin a terminal, as update asks whether it is one (updateAtTerminal),
+// at which typed is what is typed.
+func answer(t *testing.T, typed string) {
+	t.Helper()
+
+	wasIn, wasTerminal := ui.In, updateAtTerminal
+	ui.In, updateAtTerminal = strings.NewReader(typed), func() bool { return true }
+
+	t.Cleanup(func() { ui.In, updateAtTerminal = wasIn, wasTerminal })
 }
 
 // keepChannel puts version.Channel back as it was when the test ends.

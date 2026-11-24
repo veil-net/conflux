@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"time"
 
@@ -19,48 +18,55 @@ import (
 	"github.com/veil-net/conflux/internal/version"
 )
 
-// updateFrom and updateExecutable are what a test points elsewhere: the release an update reads,
-// and the file it replaces. On Unix, updateLink is the third: the link it makes for sudo.
+// updateFrom, updateExecutable and updateAtTerminal are what a test points elsewhere: the release
+// an update reads, the file it replaces, and whether there is a terminal to ask at before a dev
+// build replaces it (ui.IsTerminal, which a test's own stdin never is). On Unix, updateLink is
+// the fourth: the link it makes for sudo.
 var (
 	updateFrom       = update.Source{}
 	updateExecutable = paths.InstalledExecutable
+	updateAtTerminal = ui.IsTerminal
 )
 
-// channel is the release a build updates to, and what to call it: the newest build of its own
-// channel, `latest` for a release and the pre-release `dev-latest` for a dev build. Never the
-// other's: a dev build's anchor is pinned to the dev tree and a release's to the production
-// tree, and the credential a machine holds is valid in one alone.
-func channel(dev bool) (tag, what string) {
-	if dev {
-		return update.DevTag, "dev build"
-	}
-
-	return update.ReleaseTag, "release"
-}
-
-// installed is the conflux an update replaces, as it says what it is, and whether it is a dev
-// build, which decides the channel the update follows: the machine's credential is valid in
-// the installed build's tree alone, whichever conflux runs the update. It is asked, by running
-// it for its `version`, where it is there and is not this process; this build answers where
-// nothing is installed, where this is it, and where what is installed does not run and so
-// cannot say.
-func installed(ctx context.Context, exe string) (says string, dev bool) {
+// installed says what the conflux an update replaces is: nothing, this build where it is this
+// process, and otherwise what it says it is when run for its `version`, or that it does not run.
+func installed(ctx context.Context, exe string) string {
 	if _, err := os.Stat(exe); errors.Is(err, os.ErrNotExist) {
-		return fmt.Sprintf("Nothing is installed at %s.\nThis is %s, so its channel is followed.", exe, version.String()),
-			version.Dev()
+		return fmt.Sprintf("Nothing is installed at %s.", exe)
 	}
 
 	if isThis(exe) {
-		return fmt.Sprintf("%s is %s.", exe, version.String()), version.Dev()
+		return fmt.Sprintf("%s is %s.", exe, version.String())
 	}
 
-	line, dev, err := versionOf(ctx, exe)
+	line, err := versionOf(ctx, exe)
 	if err != nil {
-		return fmt.Sprintf("%s does not run here: %v.\nThis is %s, so its channel is followed.",
-			exe, err, version.String()), version.Dev()
+		return fmt.Sprintf("%s does not run here: %v.", exe, err)
 	}
 
-	return fmt.Sprintf("%s is %s.", exe, line), dev
+	return fmt.Sprintf("%s is %s.", exe, line)
+}
+
+// confirmDev asks at a terminal before update --dev installs a dev build, saying what one is,
+// and says whether to go on, and where not, update's exit. Off a terminal it refuses, as up
+// refuses an IPv4 nobody is there to give, and nothing gets past that; declined, nothing
+// changes, and the exit is a declined observe's or uninstall's, 2.
+func confirmDev() (exit int, ok bool) {
+	if !updateAtTerminal() {
+		return fail(errors.New("update --dev asks before it installs a dev build, and there is no terminal to ask at")), false
+	}
+
+	ui.Printf("\nA dev build is the pre-release dev-latest, built from conflux's dev branch with anchor's\n" +
+		"dev build inside it. Its anchor is pinned to the dev tree (https://api-dev.veilnet.com.au),\n" +
+		"so a credential from the production tree, which a release enrols in, does not work with it.\n\n")
+
+	if !ui.Confirm("Install the dev build?") {
+		ui.Errf("the dev build was not installed, and nothing changed")
+
+		return ExitUsage, false
+	}
+
+	return ExitOK, true
 }
 
 // isThis reports whether path is the file this process runs.
@@ -88,8 +94,8 @@ func sameFile(a, b string) bool {
 	return err == nil && os.SameFile(ai, bi)
 }
 
-// runUpdate replaces the installed conflux with the one the newest build of the installed
-// conflux's channel holds for this platform, and moves the boot service onto it.
+// runUpdate replaces the installed conflux with the newest release for this platform, or with
+// --dev the newest dev build, and moves the boot service onto it.
 //
 // Only when typed. Nothing checks on a schedule, so a machine changes version when
 // somebody decides it should, and never because a release was published.
@@ -98,19 +104,24 @@ func sameFile(a, b string) bool {
 // for byte, or it is not. A rebuild of the same version is an update, as release.yml
 // publishes one.
 func runUpdate(ctx context.Context, args []string) int {
-	fs := verbFlags("update", fmt.Sprintf("conflux update — replace the installed conflux with the newest build of its channel\n\n"+
-		"  conflux update           download it, verify it, put it in place, and move\n"+
-		"                           the boot service onto it\n"+
-		"  conflux update --check   say whether there is one, and change nothing\n\n"+
-		"The installed conflux decides: a release updates to the `latest` release of\n"+
-		"github.com/veil-net/conflux, and a dev build to the newest dev build, the pre-release\n"+
-		"`dev-latest`, whichever conflux runs the update: never one to the other, since each\n"+
-		"one's anchor is pinned to its own tree. With nothing installed, this conflux's channel.\n"+
+	fs := verbFlags("update", fmt.Sprintf("conflux update — replace the installed conflux with the newest release, or dev build\n\n"+
+		"  conflux update                   download the newest release, verify it, put it in\n"+
+		"                                   place, and move the boot service onto it\n"+
+		"  conflux update --dev             the same with the newest dev build, once asked\n"+
+		"  conflux update [--dev] --check   say whether there is one, and change nothing\n\n"+
+		"The newest release is the `latest` release of github.com/veil-net/conflux, whatever\n"+
+		"is installed or running. The newest dev build is the pre-release `dev-latest`, built\n"+
+		"from conflux's dev branch with anchor's dev build inside it. Its anchor is pinned to\n"+
+		"the dev tree (https://api-dev.veilnet.com.au), so a credential from the production\n"+
+		"tree does not work with it: --dev asks at a terminal before it installs one, and\n"+
+		"refuses where there is no terminal to ask at. --check asks nothing.\n"+
 		"Held to the SHA-256 the release lists, into %s, where the installer\n"+
 		"puts it. A running anchor is restarted on the new conflux; a stopped one is left\n"+
 		"stopped, and starts on it next time.\n\n", paths.InstalledExecutable()))
 
 	check := fs.Bool("check", false, "say whether there is an update, and change nothing")
+	dev := fs.Bool("dev", false, "the newest dev build, the pre-release dev-latest, rather than the release; asked first")
+
 	if exit, ok := flagsAlone(fs, args); !ok {
 		return exit
 	}
@@ -120,8 +131,10 @@ func runUpdate(ctx context.Context, args []string) int {
 	src := updateFrom
 	src.UserAgent = version.UserAgent()
 
-	says, dev := installed(ctx, exe)
-	tag, what := channel(dev)
+	tag, what, install := update.ReleaseTag, "release", "conflux update"
+	if *dev {
+		tag, what, install = update.DevTag, "dev build", "conflux update --dev"
+	}
 
 	rel, err := update.Latest(ctx, src, tag, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
@@ -141,16 +154,25 @@ func runUpdate(ctx context.Context, args []string) int {
 		return ExitOK
 	}
 
-	ui.Printf("%s\nThe newest %s is %s, built from %s.\n", says, what, rel.Name, short(rel.Commit))
+	ui.Printf("%s\nThe newest %s is %s, built from %s.\n", installed(ctx, exe), what, rel.Name, short(rel.Commit))
 
 	if *check {
-		ui.Printf("\n  conflux update    install it\n")
+		ui.Printf("\n  %s    install it\n", install)
 
 		return ExitOK
 	}
 
 	if err := needsRoot("updating conflux", "update", args); err != nil {
 		return fail(err)
+	}
+
+	// A dev build is asked for once there is one to install, named above, and before anything
+	// is downloaded or replaced; after the privilege check, so the command typed again under
+	// sudo asks once, rather than once before the refusal and again after it.
+	if *dev {
+		if exit, ok := confirmDev(); !ok {
+			return exit
+		}
 	}
 
 	// A Windows image an earlier update moved aside, which nothing runs any more.
@@ -169,7 +191,7 @@ func runUpdate(ctx context.Context, args []string) int {
 
 	// Run before it replaces anything. The digest says these are the bytes the release
 	// holds; this says they are a conflux that starts on this machine.
-	now, _, err := versionOf(ctx, tmp)
+	now, err := versionOf(ctx, tmp)
 	if err != nil {
 		return fail(fmt.Errorf("the downloaded conflux does not run on this machine, so nothing was replaced: %w", err))
 	}
@@ -234,20 +256,19 @@ func moveService(ctx context.Context, exe string) int {
 	return ExitOK
 }
 
-// versionOf runs the conflux at path for its `version`, and returns the line that leads it and
-// whether it says it is a dev build.
-func versionOf(ctx context.Context, path string) (line string, dev bool, err error) {
+// versionOf runs the conflux at path for its `version`, and returns the line that leads it.
+func versionOf(ctx context.Context, path string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	out, err := runQuiet(ctx, path, os.Environ(), []string{"version"})
 
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if err != nil || !strings.HasPrefix(lines[0], "conflux ") {
-		return "", false, errors.New(strings.TrimSpace(lines[0] + " " + errString(err)))
+	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	if err != nil || !strings.HasPrefix(line, "conflux ") {
+		return "", errors.New(strings.TrimSpace(line + " " + errString(err)))
 	}
 
-	return lines[0], slices.ContainsFunc(lines[1:], func(l string) bool { return strings.HasPrefix(l, devBuild) }), nil
+	return line, nil
 }
 
 // runChild runs exe with args on this terminal and returns its exit code.

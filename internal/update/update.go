@@ -1,5 +1,5 @@
-// Package update replaces this conflux with the newest build of its channel for its platform:
-// conflux's `latest` release for a release, the pre-release `dev-latest` for a dev build.
+// Package update replaces the installed conflux with the newest build at a tag for its platform:
+// conflux's `latest` release, or the pre-release `dev-latest`, the newest dev build.
 //
 // Only when asked: `conflux update` is the one caller, and nothing checks on a schedule.
 //
@@ -9,7 +9,7 @@
 // SHA-256. The binary arrives through GitHub's redirect to its storage and is held to that
 // digest before it is put anywhere it could run from, so bytes substituted past the API fail
 // a compare. Nothing reads a URL out of a document: every request is built from this
-// package's own constants, one API host, one repository and the channel's tag, and the asset is
+// package's own constants, one API host, one repository and the tag asked for, and the asset is
 // resolved by name within that one release.
 //
 // No credential. conflux is a public repository, so its releases are readable by anyone,

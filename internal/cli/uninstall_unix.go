@@ -97,7 +97,7 @@ func putOnPath(exe string) error {
 // relink is the way out where root's PATH finds a conflux that is not exe in place of it: that
 // one removed, link, the link for sudo, made to exe by hand, which an update, finding exe
 // installed, never makes. Not install.sh run again, as install.sh says: it fetches the latest
-// release, and would move a dev build off its channel.
+// release, in place of a dev build update --dev put there.
 func relink(exe, link string) string {
 	return fmt.Sprintf("remove it, then link the installed conflux for sudo (sudo ln -s %s %s), or type %s by its full path under sudo", exe, link, exe)
 }

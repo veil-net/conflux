@@ -29,6 +29,12 @@ person sets moves it:
 | `run/` | `token`, `ready`, `anchord.pid`, and `anchord/sock`, the control socket — what lasts as long as one supervisor, which empties it as it starts |
 | `conflux.log` | the service's log, on macOS, FreeBSD and Windows; on Linux it goes to journald and on OpenBSD to syslog |
 
+The root holds that and nothing else. Before every start of `anchord` the supervisor removes
+from it, from `run/` and from both anchor directories whatever conflux or anchor did not put
+there — in an anchor directory, everything but anchor's `bootstrap.json`, `realmlinks`,
+`knowledge/` and `subnets.json` — leaving only a temporary file young enough to be another
+conflux command's write in progress. `bin/` it keeps to the live set the same way.
+
 Every directory is `0700` — one found wider is narrowed, and one another account owns is refused —
 and every file conflux writes there is `0600`, apart from the programs it runs (the extracted pair
 and the service's own copy of conflux, `0700`). The service definitions live where the service

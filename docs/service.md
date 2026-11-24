@@ -27,7 +27,8 @@ pair whose files are as they were when last checked is taken on a stat of each, 
 reads it only when something touched it — writes a fresh bearer token,
 decides what `anchord` runs as — its own account, with exactly the capabilities its mode
 needs, wherever that costs it nothing; see [security.md](security.md#what-anchord-runs-as)
-— makes the account the first time, lays out the directories that identity reaches,
+— removes from the root, `run/` and the anchor directories whatever neither conflux nor anchor
+put there ([config.md](config.md#where)), makes the account the first time, lays out the directories that identity reaches,
 starts `anchord`, waits until it answers an authenticated `status` call, enrols the machine
 if it has no credential yet or renews the one it has if it is past two thirds of its window,
 starts the observer under it where the configuration observes, and starts the anchor. No

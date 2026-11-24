@@ -143,7 +143,9 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing
 // behind: this build's, extracted under d, where a whole extraction is there and readable;
 // otherwise one in memory, where the platform runs one from there (AnchorctlInMemory); and
-// otherwise a copy in a private temporary directory, which done removes. Never d's own
+// otherwise a copy in a private temporary directory, which done removes, and which is the
+// account's that asked -- on Windows SYSTEM's and the Administrators' alone, as the extracted
+// pair is, would not run for a user who is not elevated. Never d's own
 // directories. Making them for help remade, after an uninstall, what it had removed, with 45 MB
 // of binaries in it; and on Windows, asked by an account that is not an administrator, it
 // left %ProgramData%\conflux owned by that account, which every later install then refused.
@@ -167,7 +169,7 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	}
 
 	bin = filepath.Join(dir, exeName("anchorctl"))
-	if err := writeExecutable(bin, anchor.Anchorctl()); err != nil {
+	if err := writeExecutable(bin, anchor.Anchorctl(), paths.RestrictToOwner); err != nil {
 		_ = os.RemoveAll(dir)
 
 		return "", nil, err
@@ -218,10 +220,10 @@ func extract(root, target string, t *Tools) error {
 	)
 
 	wg.Go(func() {
-		ctlErr = writeExecutable(filepath.Join(staging, exeName("anchorctl")), anchor.Anchorctl())
+		ctlErr = writeExecutable(filepath.Join(staging, exeName("anchorctl")), anchor.Anchorctl(), paths.Restrict)
 	})
 
-	err = writeExecutable(filepath.Join(staging, exeName("anchord")), anchor.Anchord())
+	err = writeExecutable(filepath.Join(staging, exeName("anchord")), anchor.Anchord(), paths.Restrict)
 
 	wg.Wait()
 
@@ -263,12 +265,14 @@ func extract(root, target string, t *Tools) error {
 	return nil
 }
 
-// writeExecutable writes one binary and closes it before anyone can exec it.
+// writeExecutable writes one binary and closes it before anyone can exec it, and gives it
+// to whoever restrict does: paths.Restrict for the machine's, paths.RestrictToOwner for the
+// account's.
 //
 // The Close is not tidiness. On Linux, exec of a file that is still open for writing
 // anywhere in the system fails with ETXTBSY, and a deferred Close inside a loop is
 // exactly how that bug is usually written.
-func writeExecutable(path string, content []byte) error {
+func writeExecutable(path string, content []byte, restrict func(string, bool) error) error {
 	prefault(content)
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o700)
@@ -292,7 +296,7 @@ func writeExecutable(path string, content []byte) error {
 		return fmt.Errorf("close %s: %w", path, err)
 	}
 
-	if err := paths.Restrict(path, false); err != nil {
+	if err := restrict(path, false); err != nil {
 		return fmt.Errorf("restrict %s: %w", path, err)
 	}
 

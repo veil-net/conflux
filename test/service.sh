@@ -331,6 +331,40 @@ traffic() { docker exec "$NAME" sh -c 'conflux update --check >/dev/null 2>&1 ||
 observing
 docker exec "$NAME" test -s /var/lib/.conflux/manifest.b64 \
   || { echo "the observer is capturing, and there is no credential it runs under" >&2; exit 1; }
+
+# identity is the credential the observer's legs run under, on one line: manifest.b64's SHA-256
+# and the AnchorID state.json records for it.
+identity() {
+  local sum id
+  sum=$(docker exec "$NAME" sha256sum /var/lib/.conflux/manifest.b64) || return 1
+  id=$(docker exec "$NAME" sed -n 's/.*"anchorId": "\([^"]*\)".*/\1/p' /var/lib/.conflux/state.json) || return 1
+  printf '%s %s\n' "${sum%% *}" "$id"
+}
+
+# The observer's legs enrol once: the first, above, found no credential and enrolled one, and
+# every leg after it runs under that one, enrolling nothing. What it enrolled is the manifest's
+# bytes, and the AnchorID state.json records for it as the start that began the observer ends.
+enrolled=""
+for _ in $(seq 50); do
+  enrolled=$(identity) || enrolled=""
+  case $enrolled in *" anchor"?*) break ;; esac
+  sleep 0.2
+done
+case $enrolled in
+  *" anchor"?*) ;;
+  *) echo "state.json records no AnchorID for the credential the observer runs under: ${enrolled:-no credential}" >&2
+     journal; exit 1 ;;
+esac
+
+# enrolled_once holds the credential to the one the first observer leg enrolled.
+enrolled_once() { # AFTER
+  local now
+  now=$(identity) || now=""
+  [ "$now" = "$enrolled" ] \
+    || { echo "after $1 the credential is ${now:-gone}, not the $enrolled the first observer leg enrolled" >&2
+         journal; exit 1; }
+}
+
 traffic
 for _ in $(seq 60); do
   grep -q ' 443/tcp ' <<<"$(docker exec "$NAME" conflux inventory 2>/dev/null)" && break
@@ -375,6 +409,7 @@ grep -q 'anchor.observed_flow.key_exchange' <<<"$(docker logs "$OTEL" 2>&1)" \
   || { echo "no anchor.observed_flow record reached the collector:" >&2
        docker logs "$OTEL" 2>&1 | tail -20 >&2; journal; exit 1; }
 docker rm -f "$OTEL" >/dev/null
+enrolled_once "the export leg"
 
 # Beside an anchor, under the same credential, the capture is added to what the anchor's mode
 # is given.
@@ -387,6 +422,7 @@ configure tun '"observer":{}' "$TAINT" "$API"
 start
 expect "tun and observing" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
 observing
+enrolled_once "the legs beside an anchor"
 
 # start registers the unit this conflux writes: one changed by hand, here with a capability
 # line, is replaced.
@@ -429,6 +465,7 @@ for d in "${dropins[@]}"; do
   docker exec "$NAME" test ! -e "$d" || { echo "a start left the unit's drop-in directory $d" >&2; exit 1; }
 done
 docker exec "$NAME" systemctl stop conflux.service
+enrolled_once "the starts that put the unit back"
 
 # uninstall stops the unit itself, and only then disables it: a disable fails for a unit whose
 # file is gone, which systemd may still be running. Here the file is deleted under the running

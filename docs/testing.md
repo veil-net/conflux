@@ -187,7 +187,9 @@ In between, it takes every branch of what `anchord` runs as, under the real unit
 observer's legs its configuration names an API that a `silent.socket` in the container accepts
 and never answers, so `anchord` stays up while the enrolment waits. The observer runs only under
 a credential, so its legs run under one anonymous alpha credential, enrolled by the first of
-them at `$VEILNET_API` in a random taint. Each leg reads anchord's uid, capabilities,
+them at `$VEILNET_API` in a random taint, and are held to it: `manifest.b64`'s SHA-256 and the
+AnchorID `state.json` records are still the first leg's after the export leg, after the legs
+beside an anchor, and before `uninstall`. Each leg reads anchord's uid, capabilities,
 `no_new_privs` and groups from `/proc` and the reason from `status`:
 
 | leg | anchord |

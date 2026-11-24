@@ -205,8 +205,9 @@ func credential(
 		if st.AnchorID != "" {
 			return nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
 				"the credential is gone, and %s records the anchor it was, %s; enrolling again would draw "+
-					"a new identity and overlay address. Put the manifest back, or start over with "+
-					"conflux uninstall and then conflux up, proxy or observe", d.StateFile(), st.AnchorID)}
+					"a new identity and overlay address. Put the manifest back, or start over: conflux uninstall, "+
+					"which removes conflux as well, then install conflux again and run conflux up, proxy or observe",
+				d.StateFile(), st.AnchorID)}
 		}
 
 		// Never the shared compartment. `up` and `proxy` mint a taint for a machine with

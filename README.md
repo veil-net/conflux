@@ -253,8 +253,9 @@ With more than one taint the rule is containment, not overlap — see
 
 **The taint is granted, and fixed for the life of the identity.** The enrolment asks
 for it, the credential that comes back commits to it, and a renewal restates it. A
-different taint is a different identity — `conflux uninstall --yes`, then
-`conflux up --taint` — with a new AnchorID and a new overlay address. See
+different taint is a different identity — `conflux uninstall --yes`, then install conflux
+again (uninstall removes it too) and `conflux up --taint` — with a new AnchorID and a new
+overlay address. See
 [credentials.md](docs/credentials.md#taints-are-the-credentials).
 
 **`up`, `proxy` and `observe` are exclusive.** One daemon holds one anchor, and an

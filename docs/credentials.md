@@ -48,7 +48,7 @@ It is also why `conflux uninstall` asks before it runs, and why a machine whose
 `manifest.b64` is gone while `state.json` still names the anchor it was is not enrolled
 again: the supervisor refuses it for good, naming the file, since drawing a new identity
 and address is a person's decision. Put the manifest back, or start over with
-`conflux uninstall` and `conflux up`.
+`conflux uninstall`, then install conflux again (uninstall removes it too) and `conflux up`.
 
 An ephemeral run turns the same fact the other way: it means the identity to be lost, so it
 writes nothing, and the one copy lives in memory for as long as the run. See
@@ -79,7 +79,8 @@ it in the manifest, which is where anchorctl takes them from — conflux passes 
   already holds a credential, `conflux up --taint` with the same set is accepted, and
   any other is refused.
 - **Changing them is a new identity**, with a new AnchorID and a new overlay address:
-  `conflux uninstall --yes`, then `conflux up --taint NEW`.
+  `conflux uninstall --yes`, then install conflux again (uninstall removes it too) and
+  `conflux up --taint NEW`.
 - **`conflux.json` mirrors them.** After enrolment its `taints` are the grant, and every
   start checks them against the manifest, refusing for good when the two disagree — a
   hand-edited file, say — rather than retrying something no retry changes.
@@ -221,8 +222,8 @@ identity is `manifest.b64` and nothing else; copying it moves the machine, and c
 it *without deleting the original* makes the anchor exist twice, which is an address
 conflict rather than redundancy.
 
-If you do not need the address preserved, `conflux uninstall` and `conflux up` on the
-new machine is the whole procedure.
+If you do not need the address preserved, `conflux uninstall` on the old machine, and
+installing conflux and `conflux up` on the new one, is the whole procedure.
 
 ## A guardian-issued credential
 

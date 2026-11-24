@@ -130,8 +130,9 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 			"this machine already has a credential at %s.\n"+
 				"  Installing another replaces its identity: a different AnchorID, a different\n"+
 				"  overlay address, and every peer that knew the old one left with no way to\n"+
-				"  learn the new one. If that is genuinely what you want, `conflux uninstall`\n"+
-				"  first and say so deliberately",
+				"  learn the new one. If that is genuinely what you want, say so deliberately:\n"+
+				"  `conflux uninstall`, which removes conflux as well, then install conflux again\n"+
+				"  and enrol",
 			d.ManifestFile())
 	}
 

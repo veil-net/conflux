@@ -200,7 +200,8 @@ func (e *TaintsError) Error() string {
 	}
 
 	b.WriteString("  A credential's taints are its issuer's to grant and never change, so a different one is a new\n" +
-		"  identity -- a new AnchorID and a new overlay address:\n\n" +
+		"  identity -- a new AnchorID and a new overlay address. Uninstalling removes conflux as well,\n" +
+		"  so install conflux again between the two:\n\n" +
 		"    conflux uninstall --yes\n")
 
 	if !e.Alpha {

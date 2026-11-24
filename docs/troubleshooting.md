@@ -19,7 +19,7 @@ beneath it, and most of what follows is a way of reading that output.
 | `taint … has '@'` (or `'+'`) | those bind a served network to compartments, `SUBNET@a+b`, so no taint may hold them | pick a name without them |
 | `this machine's credential grants …`, naming `conflux uninstall --yes` | `--taint` or `conflux.json` names a set the credential does not grant — or an alpha machine enrolled before the realm granted taints, whose credential grants none | a credential's taints never change: keep the ones it grants, or draw a new identity as the message says; see [credentials.md](credentials.md#taints-are-the-credentials) |
 | `… does not grant this anchor's taints`, from anchord | the manifest names taints its chain does not commit to: the issuer's mistake, which no retry changes, so the supervisor gives up | ask the issuer for a new credential |
-| `the credential is gone, and … records the anchor it was`, and the service stops | `manifest.b64` was removed from a machine that had enrolled; conflux will not draw a new identity in its place | put the manifest back from a backup, or `conflux uninstall --yes` and `conflux up` for a new identity and address |
+| `the credential is gone, and … records the anchor it was`, and the service stops | `manifest.b64` was removed from a machine that had enrolled; conflux will not draw a new identity in its place | put the manifest back from a backup, or `conflux uninstall --yes`, install conflux again (uninstall removes it too) and `conflux up`, for a new identity and address |
 | `credential EXPIRED` in status | renewal has been failing | the next line names the error; see below |
 | `clock is … away from the server's` | bad clock | fix NTP first; nothing will connect until you do |
 | two machines up, cannot reach each other | almost always taints | see below |
@@ -102,7 +102,8 @@ the table in [concepts.md](concepts.md).
 `conflux status` prints the taints this machine's credential grants. Compare them,
 character for character, with the other machine's. A credential's taints cannot be
 changed, so a machine enrolled in the wrong one needs a new identity:
-`conflux uninstall --yes`, then `conflux up --taint` with the right one. A member's
+`conflux uninstall --yes`, then install conflux again (uninstall removes it too) and
+`conflux up --taint` with the right one. A member's
 Taints order may also have moved one of them, which `status` does not show.
 
 **`DATA no` on every peer** can also mean this machine is blocked: a block leaves the

@@ -19,7 +19,8 @@ nothing and renewal is unauthenticated, so a thief renews the stolen credential
 themselves, indefinitely. The thirty-day window bounds nothing in that case.
 
 Stated plainly: **if the file leaves the machine, the only remedy is to stop using
-that identity.** `conflux uninstall --yes` and `conflux up --taint` draw a new one, and
+that identity.** `conflux uninstall --yes`, conflux installed again (uninstall removes it too),
+and `conflux up --taint` draw a new one, and
 every peer that knew the old address has to be told the new one. The stolen credential
 is still granted the old taint, and renews in it, so if the thief must not reach the
 other machines either, they move too: each draws a new identity in a new taint, since

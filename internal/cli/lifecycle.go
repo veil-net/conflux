@@ -372,8 +372,9 @@ func confirmUninstall(d paths.Dirs, yes bool) bool {
 		ui.Field("anchor", st.AnchorID)
 	}
 
-	ui.Printf("\nThe identity and the overlay address are gone. conflux up afterwards draws\n" +
-		"new ones, and every machine that knew this one by its address will not find it.\n\n")
+	ui.Printf("\nThe identity and the overlay address are gone, and conflux with them. Installing conflux\n" +
+		"again and running conflux up draws new ones, and every machine that knew this one by its\n" +
+		"address will not find it.\n\n")
 
 	return ui.Confirm("Continue?")
 }

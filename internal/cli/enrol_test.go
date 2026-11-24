@@ -122,7 +122,8 @@ func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 		t.Fatal("importCredential replaced an existing identity")
 	}
 
-	if !strings.Contains(err.Error(), "uninstall") {
+	// uninstall removes conflux too, so the way through installs it again.
+	if !strings.Contains(err.Error(), "uninstall") || !strings.Contains(err.Error(), "install conflux again") {
 		t.Errorf("the refusal should name the way through: %v", err)
 	}
 

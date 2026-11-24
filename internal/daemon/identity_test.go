@@ -18,8 +18,9 @@ func TestALostManifestIsNotReplaced(t *testing.T) {
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: srv.URL}
 
 	_, _, err := credential(t.Context(), d, &config.State{AnchorID: fakeAnchorID}, cfg, nopReporter{})
-	if !Permanent(err) || !strings.Contains(err.Error(), "conflux uninstall") {
-		t.Errorf("credential() = %v, want a refusal for good naming conflux uninstall", err)
+	// uninstall removes conflux too, so the way out installs it again.
+	if !Permanent(err) || !strings.Contains(err.Error(), "conflux uninstall") || !strings.Contains(err.Error(), "install conflux again") {
+		t.Errorf("credential() = %v, want a refusal for good naming conflux uninstall and installing again", err)
 	}
 
 	if calls.Load() != 0 || len(*asked) != 0 || config.HasManifest(d) {

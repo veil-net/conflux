@@ -125,7 +125,7 @@ configuration, and registers the boot service.
 
 | Flag | Meaning |
 |---|---|
-| `--taint T` | the taint to enrol in; repeat for more than one. On a machine with no credential yet it is the enrolment's request: the first machine of a network omits it, and conflux mints one and prints it; every other machine passes that one to join. Once a machine holds a credential its taints are fixed: the same set is accepted, and any other is refused, naming `conflux uninstall --yes` and then `conflux up --taint`, which is a new identity. See [concepts.md](concepts.md#taints) and [credentials.md](credentials.md#taints-are-the-credentials). |
+| `--taint T` | the taint to enrol in; repeat for more than one. On a machine with no credential yet it is the enrolment's request: the first machine of a network omits it, and conflux mints one and prints it; every other machine passes that one to join. Once a machine holds a credential its taints are fixed: the same set is accepted, and any other is refused, naming `conflux uninstall --yes`, installing conflux again (uninstall removes it too) and then `conflux up --taint`, which is a new identity. See [concepts.md](concepts.md#taints) and [credentials.md](credentials.md#taints-are-the-credentials). |
 | `--ipv4 ADDRESS` | this machine's IPv4: an address, or an address and the length of the range routed to peers, `10.128.0.7/24`. Any unicast address outside `198.18.0.0/15`; see below. |
 | `--no-ipv4` | no IPv4 of its own, without prompting. It still reaches IPv4 peers. |
 | `--subnet CIDR` | a network this machine forwards for the realm: an interface, a private network with no host bits set, or `'*'` for every private network on every interface, each optionally bound to some of this machine's taints as `SPEC@a+b`; repeat for more. It replaces a list a member's Subnets order set. See [modes.md](modes.md#--subnet-and-what-the-host-has-to-be). |
@@ -358,8 +358,8 @@ where the complaint would come from anchor instead of from the document that cau
 **It refuses to replace an existing manifest.** `up` enrols only when there is none,
 because a second enrolment is a second AnchorID and a second overlay address with every
 peer orphaned and nothing said; a verb that writes manifests must not be the way around
-that rule. `conflux uninstall` first if replacing the identity is genuinely what you
-mean.
+that rule. `conflux uninstall` first, then install conflux again (uninstall removes it too),
+if replacing the identity is genuinely what you mean.
 
 Everything is checked before a byte is written — the format version, the `kind` (a
 `realm` manifest mints anchors and does not start one), the `renewalAuth`, the renewal
@@ -474,8 +474,9 @@ one should not need a config file read to find out.
 
 A `refused` line appears when the machine is configured for taints its credential does
 not grant, which every start refuses for good. It names the set granted and the set
-configured, and the way out: `conflux uninstall --yes`, then `conflux up --taint` (or,
-for an issued credential, `conflux enrol` with one granted in the taints wanted) — a new
+configured, and the way out: `conflux uninstall --yes`, then install conflux again (uninstall
+removes it too) and `conflux up --taint` (or, for an issued credential, `conflux enrol` with
+one granted in the taints wanted) — a new
 identity, since a credential's taints never change. The usual cause is an alpha machine
 enrolled before the realm granted taints, whose credential grants none; nothing
 re-enrols it automatically. See

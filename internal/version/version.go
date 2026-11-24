@@ -13,13 +13,13 @@ import (
 
 // Version is the release, MAJOR.MINOR.PATCH, injected at link time:
 //
-//	-ldflags "-X github.com/veil-net/conflux/internal/version.Version=1.1.0"
+//	-ldflags "-X github.com/veil-net/conflux/internal/version.Version=2.0.0"
 //
 // The default is not "dev". The VERSION file at the repository root is what this
 // tree claims to be, the Makefile stamps that same string, and a plain `go build`
 // that stamps nothing should not disagree with `make build` about what it just
 // compiled. TestVersionMatchesFile holds the two together.
-var Version = "1.1.0"
+var Version = "2.0.0"
 
 // Channel is "dev" in a dev build -- conflux's `dev-latest`, whose anchor is anchor's
 // `dev-latest`, pinned to the dev tree -- and empty in a release. Injected the same way, by

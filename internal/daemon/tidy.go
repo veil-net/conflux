@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/service"
 )
 
@@ -20,19 +22,11 @@ import (
 // did not finish, and no anchord runs while the directory is tidied.
 var anchorFiles = []string{"bootstrap.json", "realmlinks", "knowledge", "subnets.json"}
 
-// transientAge is how long a temporary file in the root may be another conflux's write in
-// progress -- an atomic write's (config.TempPrefix), or the service copy's
-// (service.StagedPrefix) -- rather than one a crash left.
-const transientAge = time.Hour
-
 // tidy keeps the root to what conflux and anchor put there, and removes everything else: the
 // root's own entries, its run directory's, and both anchor directories'. What it keeps of
 // the root's own files it gives back to their owner and modes (restoreModes). The bin directory is
 // libexec.Sweep's. Run before every spawn, once the account's leftovers are ended and before
 // anything is laid out for the next anchord, so nothing it removes is in use.
-//
-// Each anchor directory is opened as a root, so an entry the account made in its own
-// directory -- a link above all -- leads the removal nowhere outside it.
 func (s *Supervisor) tidy() error {
 	d := s.Dirs
 
@@ -48,13 +42,13 @@ func (s *Supervisor) tidy() error {
 	run := names(d.TokenFile(), d.DaemonPIDFile(), d.ReadyFile(), d.DaemonRun())
 
 	errs := []error{
-		removeUnknown(d.Root, root, true),
-		removeUnknown(d.RunDir(), run, false),
+		removeExcept(d.Root, func(e fs.DirEntry) bool { return slices.Contains(root, e.Name()) || inProgress(e) }),
+		removeExcept(d.RunDir(), named(run...)),
 		s.restoreModes(),
 	}
 
 	for _, dir := range []string{d.AnchorDir(), d.RootAnchorDir()} {
-		errs = append(errs, keepAnchorFiles(dir))
+		errs = append(errs, removeExcept(dir, named(anchorFiles...)))
 	}
 
 	return errors.Join(errs...)
@@ -70,45 +64,11 @@ func names(paths ...string) []string {
 	return out
 }
 
-// removeUnknown removes every entry of dir not named in known, sparing, where transient is
-// set, a temporary file young enough to be a write in progress.
-func removeUnknown(dir string, known []string, transient bool) error {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-
-	if err != nil {
-		return err
-	}
-
-	var errs []error
-
-	for _, e := range entries {
-		name := e.Name()
-		if slices.Contains(known, name) || (transient && inProgress(e)) {
-			continue
-		}
-
-		errs = append(errs, os.RemoveAll(filepath.Join(dir, name)))
-	}
-
-	return errors.Join(errs...)
-}
-
-// inProgress reports whether e is a temporary file another conflux may still be writing.
-func inProgress(e fs.DirEntry) bool {
-	if !strings.HasPrefix(e.Name(), config.TempPrefix) && !strings.HasPrefix(e.Name(), service.StagedPrefix) {
-		return false
-	}
-
-	info, err := e.Info()
-
-	return err == nil && time.Since(info.ModTime()) < transientAge
-}
-
-// keepAnchorFiles removes from the anchor directory dir everything that is not anchor's.
-func keepAnchorFiles(dir string) error {
+// removeExcept removes every entry of dir that keep does not keep, going on past one that will
+// not go, and returns every failure. dir is opened as a root, so an entry somebody made in it --
+// a link above all, in an anchor directory, which anchord's account can write -- leads the
+// removal nowhere outside it. A dir that is not there holds nothing to remove.
+func removeExcept(dir string, keep func(fs.DirEntry) bool) error {
 	r, err := os.OpenRoot(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -127,10 +87,35 @@ func keepAnchorFiles(dir string) error {
 	var errs []error
 
 	for _, e := range entries {
-		if !slices.Contains(anchorFiles, e.Name()) {
-			errs = append(errs, r.RemoveAll(e.Name()))
+		if keep(e) {
+			continue
+		}
+
+		if err := r.RemoveAll(e.Name()); err != nil {
+			errs = append(errs, fmt.Errorf("remove %s: %w", filepath.Join(dir, e.Name()), err))
 		}
 	}
 
 	return errors.Join(errs...)
+}
+
+// named keeps the entries called one of names.
+func named(names ...string) func(fs.DirEntry) bool {
+	return func(e fs.DirEntry) bool { return slices.Contains(names, e.Name()) }
+}
+
+// nothing keeps no entry.
+func nothing(fs.DirEntry) bool { return false }
+
+// inProgress reports whether e is a temporary file another conflux may still be writing: an
+// atomic write's (config.TempPrefix), or the service copy's (service.StagedPrefix), younger
+// than one a crash left would be.
+func inProgress(e fs.DirEntry) bool {
+	if !strings.HasPrefix(e.Name(), config.TempPrefix) && !strings.HasPrefix(e.Name(), service.StagedPrefix) {
+		return false
+	}
+
+	info, err := e.Info()
+
+	return err == nil && time.Since(info.ModTime()) < libexec.TransientAge
 }

@@ -441,7 +441,7 @@ func RemoveEphemeralRoot(d paths.Dirs, unlock func()) error {
 	driver := deleteDriver(d)
 	lock := d.ServeLockFile()
 
-	if err := clearExcept(d.Root, lock); err != nil {
+	if err := removeExcept(d.Root, named(filepath.Base(lock))); err != nil {
 		unlock()
 
 		return errors.Join(driver, fmt.Errorf("remove %s: %w", d.Root, err))
@@ -487,28 +487,8 @@ func clearKilled(d paths.Dirs, e *Ephemeral) error {
 		}
 	}
 
-	return clearExcept(d.Root, d.ServeLockFile())
+	return removeExcept(d.Root, named(filepath.Base(d.ServeLockFile())))
 }
 
 // deleteDriver is wintun.DeleteDriver, which tests replace: only Windows has a driver to remove.
 var deleteDriver = wintun.DeleteDriver
-
-// clearExcept removes everything in dir but keep, which may be "": what a run killed before
-// it could clean up left in the root, which the next run starts without, and what the last
-// supervisor left in the run directory.
-func clearExcept(dir, keep string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-
-	for _, e := range entries {
-		if p := filepath.Join(dir, e.Name()); p != keep {
-			if err := os.RemoveAll(p); err != nil {
-				return fmt.Errorf("clear %s: %w", p, err)
-			}
-		}
-	}
-
-	return nil
-}

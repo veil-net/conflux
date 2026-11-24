@@ -191,7 +191,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// disk with the rest of the root, so a marker, a token or a socket written before a
 	// crash or a power cut is still there, and nothing here is up yet. A marker saying
 	// otherwise is a lie the whole readiness mechanism rests on not telling.
-	if err := clearExcept(s.Dirs.RunDir(), ""); err != nil {
+	if err := removeExcept(s.Dirs.RunDir(), nothing); err != nil {
 		return err
 	}
 

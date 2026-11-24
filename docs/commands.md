@@ -69,7 +69,9 @@ something silently.
 only prints its usage, and conflux's prints that same usage in full, so owning the word
 loses nothing. Bare, it prints conflux's usage and then anchorctl's whole usage beneath
 a rule, so one page covers both surfaces. `conflux help COMMAND` prints that command's
-own usage instead, whichever binary it belongs to.
+own usage instead, whichever binary it belongs to, except for the two of conflux's with no
+usage of their own, which get the whole page: `help` itself, and `status`, whose arguments,
+`-h` among them, go to anchorctl's `status` (below).
 
 **`status`** is resolved by arity. Bare `conflux status` is conflux's, and it prints
 `anchorctl status` underneath — additive, so nothing is lost by conflux owning that

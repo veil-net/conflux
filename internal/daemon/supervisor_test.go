@@ -543,24 +543,36 @@ func fetchingDriver(t *testing.T, log string, err error) {
 }
 
 // bringings are the two ways the supervisor brings an anchor up, each fetching Windows' driver
-// before it takes conflux.lock: the cycle's start, and the watcher's rebuild.
-var bringings = map[string]func(context.Context, *Supervisor, *config.Config) error{
-	"the start": func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
-		_, anchorErr, err := s.up(ctx, cfg)
+// before it takes conflux.lock: the cycle's start, and the watcher's rebuild. steps is what each
+// runs of anchorctl, and the driver's fetch as "wintun", in order, for an interface.
+var bringings = map[string]struct {
+	bring func(context.Context, *Supervisor, *config.Config) error
+	steps []string
+}{
+	"the start": {
+		bring: func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
+			_, anchorErr, err := s.up(ctx, cfg)
 
-		return errors.Join(anchorErr, err)
+			return errors.Join(anchorErr, err)
+		},
+		steps: []string{"wintun", "start"},
 	},
-	"a rebuild": func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
-		return s.rebuild(ctx, cfg, false)
+	"a rebuild": {
+		bring: func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
+			return s.rebuild(ctx, cfg, false)
+		},
+		steps: []string{"stop", "wintun", "start"},
 	},
 }
 
-// TestTheDriverIsFetchedOutsideTheLock: Windows' driver is fetched before the start takes
-// conflux.lock, and before a rebuild does, so a first download that hangs -- up to wintun's
-// 90-second timeout -- holds back neither `conflux renew` nor up's save of the configuration,
-// which wait for that lock. The anchor starts once the driver is had.
+// TestTheDriverIsFetchedOutsideTheLock: Windows' driver is part of the anchor's start, so the
+// start fetches it, and so does a rebuild -- one the start could not have is the watcher's to
+// fetch again, with the anchor -- each before anchorctl's start. And before either takes
+// conflux.lock, so a first download that hangs -- up to wintun's 90-second timeout -- holds back
+// neither `conflux renew` nor up's save of the configuration, which wait for that lock. The
+// anchor starts once the driver is had.
 func TestTheDriverIsFetchedOutsideTheLock(t *testing.T) {
-	for name, bring := range bringings {
+	for name, b := range bringings {
 		t.Run(name, func(t *testing.T) {
 			s, log := supervised(t, "1")
 			credentialed(t, s.Dirs)
@@ -573,18 +585,19 @@ func TestTheDriverIsFetchedOutsideTheLock(t *testing.T) {
 
 			fetching, fetched := make(chan struct{}), make(chan struct{})
 
-			ensureDriver = func(context.Context, paths.Dirs) error {
+			fetchingDriver(t, log, nil)
+			logged := ensureDriver
+
+			ensureDriver = func(ctx context.Context, d paths.Dirs) error {
 				close(fetching)
 				<-fetched
 
-				return nil
+				return logged(ctx, d)
 			}
-
-			t.Cleanup(func() { ensureDriver = wintun.Ensure })
 
 			done := make(chan error, 1)
 
-			go func() { done <- bring(t.Context(), s, cfg) }()
+			go func() { done <- b.bring(t.Context(), s, cfg) }()
 
 			select {
 			case <-fetching:
@@ -616,8 +629,8 @@ func TestTheDriverIsFetchedOutsideTheLock(t *testing.T) {
 				t.Fatalf("%s did not finish once the driver was had", name)
 			}
 
-			if !slices.Contains(ran(t, log), "start") {
-				t.Errorf("anchorctl ran %v: the anchor was never started", ran(t, log))
+			if cmds := ran(t, log); !slices.Equal(cmds, b.steps) {
+				t.Errorf("%s ran %v, want %v", name, cmds, b.steps)
 			}
 		})
 	}
@@ -643,7 +656,7 @@ func (w *warnings) Warn(format string, args ...any) {
 // renew` for a start nothing wants any more, starts the observer under a context already
 // cancelled only to warn that it did not, or writes the state.
 func TestAStopDuringTheDriversFetchGoesNoFurther(t *testing.T) {
-	for name, bring := range bringings {
+	for name, b := range bringings {
 		t.Run(name, func(t *testing.T) {
 			s, log := supervised(t, "1")
 			credentialed(t, s.Dirs)
@@ -677,7 +690,7 @@ func TestAStopDuringTheDriversFetchGoesNoFurther(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			done := make(chan error, 1)
 
-			go func() { done <- bring(ctx, s, cfg) }()
+			go func() { done <- b.bring(ctx, s, cfg) }()
 
 			select {
 			case <-fetching:

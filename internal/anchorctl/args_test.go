@@ -286,3 +286,25 @@ func TestAnUplinkLeavesTheManifestNothingAnchorRefuses(t *testing.T) {
 		}
 	}
 }
+
+// TestServedSubnetsAreOneArgument: anchorctl reads a -serve-subnets followed by an argument
+// that starts with '-' as one given alone, every private network on the host
+// (bareServeSubnets in anchor's cmd/anchorctl/lifecycle.go), so a list whose first entry is
+// an interface named "-veth0" would be served as "*". Written -serve-subnets=LIST, the list
+// is the flag's whatever it starts with.
+func TestServedSubnetsAreOneArgument(t *testing.T) {
+	args := StartMode{TUN: true, Subnets: []string{"-veth0", "eth1"}}.Args()
+
+	i := slices.IndexFunc(args, func(a string) bool { return strings.HasPrefix(a, "-serve-subnets") })
+	if i < 0 {
+		t.Fatalf("no -serve-subnets in %q", args)
+	}
+
+	if args[i] != "-serve-subnets=-veth0,eth1" {
+		t.Errorf("the served subnets are %q, want -serve-subnets=-veth0,eth1 as one argument", args[i:])
+	}
+
+	if i+1 < len(args) && strings.HasPrefix(args[i+1], "-veth0") {
+		t.Errorf("the list is an argument of its own after the flag, which anchorctl reads as none: %q", args)
+	}
+}

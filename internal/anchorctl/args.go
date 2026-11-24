@@ -179,8 +179,12 @@ func (m StartMode) Args() []string {
 		args = append(args, "-ipv4", m.IPv4)
 	}
 
+	// One argument, the list after an '=': anchorctl reads a -serve-subnets whose next
+	// argument starts with '-' as one given alone, which serves every private network on the
+	// host (its bareServeSubnets), so an interface named "-veth0" first in the list would be
+	// served as "*".
 	if len(m.Subnets) > 0 {
-		args = append(args, "-serve-subnets", strings.Join(m.Subnets, ","))
+		args = append(args, "-serve-subnets="+strings.Join(m.Subnets, ","))
 	}
 
 	// -serve-proxy is repeatable rather than a list, so one flag per spec.

@@ -21,7 +21,9 @@ func TestTheEphemeralRootIsNotTheMachines(t *testing.T) {
 
 // TestTheEphemeralRootIsWhatABootEmpties: root's run under the system's runtime directory, a
 // user's in their own runtime directory, on every Unix that names one, or else their temporary
-// one, and nothing anywhere a reboot keeps by design -- never a cache directory in a home.
+// one, and nothing anywhere a reboot keeps by design -- never a cache directory in a home. Every
+// platform's answer, on whichever host runs the test: a Unix's runtime directories are Unix
+// paths on Windows too.
 func TestTheEphemeralRootIsWhatABootEmpties(t *testing.T) {
 	xdg := func(v string) func(string) string {
 		return func(k string) string {

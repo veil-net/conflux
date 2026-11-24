@@ -2,6 +2,7 @@ package paths
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -37,19 +38,23 @@ func EphemeralRoot() string {
 	return ephemeralRoot(runtime.GOOS, os.Geteuid(), os.Getenv)
 }
 
-// ephemeralRoot is EphemeralRoot on goos, for euid, with getenv's environment.
+// ephemeralRoot is EphemeralRoot on goos, for euid, with getenv's environment. A Unix's
+// runtime directories are Unix paths, joined and judged absolute as Unix does (path, not
+// filepath), so the answer for goos is the same on whatever host asks -- a test on Windows
+// among them; on Unix the two are one. The temporary directory is the host's own, as
+// os.TempDir is.
 func ephemeralRoot(goos string, euid int, getenv func(string) string) string {
 	switch {
 	case goos == "windows":
 		return filepath.Join(os.TempDir(), ephemeralName)
 	case euid == 0 && goos == "linux":
-		return filepath.Join("/run", ephemeralName)
+		return path.Join("/run", ephemeralName)
 	case euid == 0:
-		return filepath.Join("/var/run", ephemeralName)
+		return path.Join("/var/run", ephemeralName)
 	}
 
-	if xdg := getenv("XDG_RUNTIME_DIR"); xdg != "" && filepath.IsAbs(xdg) {
-		return filepath.Join(xdg, ephemeralName)
+	if xdg := getenv("XDG_RUNTIME_DIR"); xdg != "" && path.IsAbs(xdg) {
+		return path.Join(xdg, ephemeralName)
 	}
 
 	return filepath.Join(os.TempDir(), ephemeralName+"-"+strconv.Itoa(euid))

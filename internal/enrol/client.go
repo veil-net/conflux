@@ -441,17 +441,14 @@ func SameHost(renewalURL, apiBase string) error {
 // operator put it -- so the base is already in the document, and asking an operator
 // to retype it buys a typo rather than a check. Only the origin is kept: a renewal URL
 // is a path on an API, and treating the whole of it as a base would make every later
-// request a child of one node's credential route.
+// request a child of one node's credential route. The URL is held to config.CheckAPIURL,
+// which every renewal sent to it is, so a base no renewal could reach is never read.
 func BaseOf(renewalURL string) (string, error) {
-	u, err := url.Parse(renewalURL)
-	if err != nil {
-		return "", fmt.Errorf("%q is not a URL: %w", renewalURL, err)
+	if err := config.CheckAPIURL(renewalURL); err != nil {
+		return "", fmt.Errorf("renewalUrl: %w", err)
 	}
 
-	if u.Scheme == "" || u.Host == "" {
-		return "", fmt.Errorf(
-			"%q is not an absolute URL, so the API it renews against cannot be read out of it", renewalURL)
-	}
+	u, _ := url.Parse(renewalURL) // CheckAPIURL parsed it already.
 
 	return u.Scheme + "://" + u.Host, nil
 }

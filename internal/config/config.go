@@ -83,7 +83,8 @@ const DefaultAPIBaseURL = "https://api.veilnet.com.au"
 const InsecureAPIEnv = "CONFLUX_ALLOW_INSECURE_API"
 
 // CheckAPIURL refuses a URL conflux will not send a request to: one that is not absolute, has
-// no host, or is not https, unless InsecureAPIEnv allows plain http. The one check for every
+// no host name (a port alone is none), or is not https, unless InsecureAPIEnv allows plain
+// http. The one check for every
 // API conflux reaches -- the enrolment API a configuration names, a renewal URL a manifest
 // names, the release APIs update and anchor-fetch read, and every redirect any of them
 // follows -- since two answers to one question make the more permissive the way in.
@@ -93,7 +94,7 @@ func CheckAPIURL(raw string) error {
 		return fmt.Errorf("%q is not a URL: %w", raw, err)
 	}
 
-	if u.Scheme == "" || u.Host == "" {
+	if u.Scheme == "" || u.Hostname() == "" {
 		return fmt.Errorf("%q is not an absolute URL with a host, such as %s", raw, DefaultAPIBaseURL)
 	}
 

@@ -178,8 +178,12 @@ func TestEnrolWillNotInstallOverAManifestItCannotRead(t *testing.T) {
 
 // TestEnrolRefusesBeforeWriting covers every refusal at once, and checks the same
 // thing about each: that nothing reached the disk. A verb that writes half of a
-// provisioning is worse than one that writes none of it.
+// provisioning is worse than one that writes none of it. An API every start would refuse
+// (config.CheckAPIURL) is among them, refused while a person is here to fix it.
 func TestEnrolRefusesBeforeWriting(t *testing.T) {
+	t.Setenv(config.InsecureAPIEnv, "")
+
+	plainRenewal := strings.Replace(guardianDoc, `"renewalUrl": "https://`, `"renewalUrl": "http://`, 1)
 	realmDoc := strings.Replace(guardianDoc, `"kind": "anchor"`, `"kind": "realm"`, 1)
 	futureDoc := strings.Replace(guardianDoc, `"formatVersion": 1`, `"formatVersion": 2`, 1)
 	unknownAuth := strings.Replace(guardianDoc, `"renewalAuth": "node-secret"`, `"renewalAuth": "mtls"`, 1)
@@ -202,6 +206,11 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		"a renewing one already over":     {lapsedGuardian, guardianAPI, "expired"},
 		"an address anchor refuses":       {badAddress, guardianAPI, "unicast"},
 		"an api naming another host":      {guardianDoc, "https://somewhere.else", "somewhere.else"},
+		"an api of another scheme":        {guardianDoc, "ftp://guardian.example.gov", "want https"},
+		"a plain-http api":                {guardianDoc, "http://guardian.example.gov", "plain http"},
+		"a plain-http renewal URL":        {plainRenewal, "", "plain http"},
+		"a plain-http renewal URL, --api": {plainRenewal, guardianAPI, "plain http"},
+		"a fixed term's plain-http api":   {ghostNodeDoc, "http://ghosts.example", "plain http"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d, path := site(t, tc.doc)

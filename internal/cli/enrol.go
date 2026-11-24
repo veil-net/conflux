@@ -320,7 +320,17 @@ const maxManifest = 1 << 20
 // A fixed-term credential names no renewal URL, so there is nothing to read a base out
 // of and nothing to check --api against: the flag is taken as given, and empty leaves
 // the configuration's API as it was. Nothing asks it for this credential anyway.
+//
+// Either way the API installed, and the renewal URL, are held to config.CheckAPIURL, as
+// every start and renewal holds them: one they refuse is refused here, while a person is
+// present, rather than installed and then refused for good at the next start.
 func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
+	if flagValue != "" {
+		if err := config.CheckAPIURL(flagValue); err != nil {
+			return "", fmt.Errorf("--api: %w", err)
+		}
+	}
+
 	url := m.RenewalURL()
 
 	switch {
@@ -333,8 +343,13 @@ func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 				"  would ever renew it. The issuer has to set it", m.RenewalAuth())
 	}
 
+	base, err := enrol.BaseOf(url)
+	if err != nil {
+		return "", err
+	}
+
 	if flagValue == "" {
-		return enrol.BaseOf(url)
+		return base, nil
 	}
 
 	if err := enrol.SameHost(url, flagValue); err != nil {

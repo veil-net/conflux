@@ -102,12 +102,13 @@ func TestTheObserverIsRefusedWhereThereIsNoCapture(t *testing.T) {
 }
 
 // TestValidateRefusesAnAPIThatCannotWork: an apiBaseUrl that no enrolment or renewal could
-// be sent to -- no scheme, no host, plain http, another scheme -- is refused before anything
-// starts, rather than failing every call after it, for ever. Plain http is a test's alone.
+// be sent to -- no scheme, no host (a port is none), plain http, another scheme -- is refused
+// before anything starts, rather than failing every call after it, for ever. Plain http is a
+// test's alone.
 func TestValidateRefusesAnAPIThatCannotWork(t *testing.T) {
 	t.Setenv(InsecureAPIEnv, "")
 
-	for _, api := range []string{"api-dev.veilnet.com.au", "http://api.veilnet.com.au", "https://", "ftp://x"} {
+	for _, api := range []string{"api-dev.veilnet.com.au", "http://api.veilnet.com.au", "https://", "https://:443", "ftp://x"} {
 		c := base(ModeProxy)
 		c.APIBaseURL = api
 

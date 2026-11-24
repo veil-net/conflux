@@ -323,7 +323,10 @@ for a credential granting none — and `Authorization: Bearer <renewalSecret>`, 
 back the same shape, `{"chain": "…", "notAfter": "…", "bootstrap": [...]}`. That URL is
 where the configured API base came from in the first place — enrol reads it out of the
 document — so the two agree unless `--api` was passed to say otherwise, in which case
-they are checked against each other. See [commands.md](commands.md#conflux-enrol).
+they are checked against each other. Both are held, at enrol, to the rule every start holds
+`apiBaseUrl` to — absolute, with a host, `https` — so one no renewal could reach is refused
+while a person is there to read why, not installed and refused at the next start. See
+[commands.md](commands.md#conflux-enrol).
 
 A guardian signs from its own realm root, which it holds. So its ability to renew your
 machine does not depend on it being able to reach anything upstream — if its own
@@ -362,7 +365,8 @@ Next: sudo conflux up --serve-exit
 What conflux does differently:
 
 - **`conflux enrol` installs it with no `--api`.** There is no renewal URL to read a base
-  out of. `--api` is taken as given if passed, and nothing is checked against it.
+  out of. `--api` is taken if passed, held only to the rule every start holds `apiBaseUrl`
+  to, since there is no renewal URL to check it against.
 - **An expired one is refused at enrol**, as any expired credential is. One that does
   not renew never comes back; one that does renews by the AnchorID a started anchor
   reports, and anchor will not start one on an expired chain. Installing either would

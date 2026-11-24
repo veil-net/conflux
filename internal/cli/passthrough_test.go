@@ -120,6 +120,8 @@ func TestHelpIsACommandOrAFlag(t *testing.T) {
 		"help block":                   true,
 		"block -h":                     true,
 		"peers --help":                 true,
+		"peers --h":                    true,
+		"block -h=true":                true,
 		"block -target X -reason help": false,
 		"peers":                        false,
 	} {

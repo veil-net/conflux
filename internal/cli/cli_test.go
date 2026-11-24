@@ -180,19 +180,29 @@ func TestHelpForACommandIsThatCommands(t *testing.T) {
 }
 
 // TestUsageIsOneStream: -h asks for a command's usage, so it is answered -- exit 0 -- and whole
-// on stdout, the flags with the synopsis, where a pager or grep reads it.
+// on stdout, the flags with the synopsis, where a pager or grep reads it. Every word a flag set
+// takes for help asks it, --h among them, of conflux itself and of every verb: start and renew,
+// which read any other flag as anchorctl's, included.
 func TestUsageIsOneStream(t *testing.T) {
-	for name := range verbs() {
-		switch name {
-		case "help":
-			continue // its own page, -h or not
-		case "status", "anchorctl":
-			continue // anchorctl's usage, which its own tests cover
+	t.Cleanup(paths.UseRoot(t.TempDir()))
+
+	for _, help := range []string{"-h", "--h", "-help", "--help"} {
+		for name := range verbs() {
+			switch name {
+			case "help":
+				continue // its own page, -h or not
+			case "status", "anchorctl":
+				continue // anchorctl's usage, which its own tests cover
+			}
+
+			out, errOut, code := capture(t, name, help)
+			if code != ExitOK || errOut != "" || !strings.Contains(out, "conflux "+name) {
+				t.Errorf("conflux %s %s exited %d, printing\n%s\nand on stderr\n%s", name, help, code, out, errOut)
+			}
 		}
 
-		out, errOut, code := capture(t, name, "-h")
-		if code != ExitOK || errOut != "" || !strings.Contains(out, "conflux "+name) {
-			t.Errorf("conflux %s -h exited %d, printing\n%s\nand on stderr\n%s", name, code, out, errOut)
+		if out, errOut, code := capture(t, help); code != ExitOK || errOut != "" || !strings.Contains(out, "Commands") {
+			t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", help, code, out, errOut)
 		}
 	}
 
@@ -201,9 +211,9 @@ func TestUsageIsOneStream(t *testing.T) {
 	}
 
 	// cert and the two cert commands that have commands of their own list them, and each of them
-	// takes every word a flag set takes for help, as their commands do.
+	// takes every word a flag set takes for help, as their commands do, and help besides.
 	for _, cmd := range [][]string{{"cert"}, {"cert", "ca"}, {"cert", "p12"}} {
-		for _, help := range []string{"help", "-h", "--help", "-help"} {
+		for _, help := range []string{"help", "-h", "--h", "--help", "-help"} {
 			args := append(slices.Clone(cmd), help)
 
 			out, errOut, code := capture(t, args...)

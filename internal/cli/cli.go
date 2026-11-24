@@ -105,10 +105,10 @@ func Main(argv []string) int {
 	// would otherwise be ambiguous with conflux's own status, and a rule that is
 	// sometimes right is worse here than one that always explains itself.
 	if strings.HasPrefix(name, "-") {
-		switch name {
-		case "-h", "--help", "-help":
+		switch {
+		case helpFlag(name):
 			return runHelp(ctx, rest)
-		case "-v", "--version", "-version":
+		case name == "-v", name == "--version", name == "-version":
 			return runVersion(ctx, rest)
 		default:
 			ui.Errf("%q is not a conflux option.\n"+
@@ -229,6 +229,21 @@ func flagsAlone(fs *flag.FlagSet, args []string) (exit int, ok bool) {
 	}
 
 	return ExitOK, true
+}
+
+// helpFlag reports whether arg asks for a usage, as a flag set takes it: -h or -help, after one
+// dash or two, with a value or without. The one answer for conflux itself, every verb that
+// looks at its flags before its flag set does, the cert command lists, and a pass-through, so
+// none of them reads --h, which anchorctl's flag sets answer as -h, as anything else.
+func helpFlag(arg string) bool {
+	name, ok := strings.CutPrefix(arg, "-")
+	if !ok {
+		return false
+	}
+
+	name, _, _ = strings.Cut(strings.TrimPrefix(name, "-"), "=")
+
+	return name == "h" || name == "help"
 }
 
 // usageExit is the exit for flags that did not parse: 0 for -h, which asked for the usage it

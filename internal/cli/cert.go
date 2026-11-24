@@ -108,15 +108,11 @@ func certUsage(w io.Writer, cmds map[string]certCommand) {
 
 // commandList answers cert, or a cert command with commands of its own, where args name none of
 // them: given nothing, a usage mistake, with the list print writes on stderr and exit 2; asked
-// for the list -- help, or -h, --help or -help, every word a flag set takes for help -- with it
-// on stdout and exit 0. listed is false where args[0] is for the caller to look up.
+// for the list -- help, or any word a flag set takes for help (helpFlag) -- with it on stdout
+// and exit 0. listed is false where args[0] is for the caller to look up.
 func commandList(args []string, print func(w io.Writer)) (code int, listed bool) {
-	if len(args) > 0 {
-		switch args[0] {
-		case "help", "-h", "--help", "-help":
-		default:
-			return 0, false
-		}
+	if len(args) > 0 && args[0] != "help" && !helpFlag(args[0]) {
+		return 0, false
 	}
 
 	print(usageOut(len(args) == 0))

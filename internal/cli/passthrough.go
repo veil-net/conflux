@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -110,21 +111,10 @@ func connectionDetails(d paths.Dirs, args []string) (string, int) {
 }
 
 // wantsUsage reports whether this invocation is only asking what a command takes: help
-// as the command, or a help flag anywhere. Not help anywhere at all, which is as likely a
-// flag's value -- `block -target X -reason help` -- as a request.
+// as the command, or a help flag (helpFlag) anywhere. Not help anywhere at all, which is as
+// likely a flag's value -- `block -target X -reason help` -- as a request.
 func wantsUsage(args []string) bool {
-	if len(args) > 0 && args[0] == "help" {
-		return true
-	}
-
-	for _, a := range args {
-		switch a {
-		case "-h", "--help", "-help":
-			return true
-		}
-	}
-
-	return false
+	return len(args) > 0 && args[0] == "help" || slices.ContainsFunc(args, helpFlag)
 }
 
 // namesSocket reports whether the user supplied their own -socket, in any of the

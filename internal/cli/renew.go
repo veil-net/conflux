@@ -153,18 +153,13 @@ func neverEnrolled() int {
 // shadowed verb rather than conflux's, which takes none.
 //
 // Shared by renew and start, which resolve their collisions the same way and for the
-// same reason: conflux's takes no arguments at all, so a flag is the signal, and -h
-// is the one that means the caller wants conflux's own usage.
+// same reason: conflux's takes no arguments at all, so a flag is the signal, and a help
+// flag (helpFlag) is the one that means the caller wants conflux's own usage.
 func anchorctlFlag(args []string) string {
 	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			continue
-		}
+		if strings.HasPrefix(a, "-") && !helpFlag(a) {
+			name, _, _ := strings.Cut(a, "=")
 
-		switch name, _, _ := strings.Cut(a, "="); name {
-		case "-h", "--help", "-help":
-			continue
-		default:
 			return name
 		}
 	}

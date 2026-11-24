@@ -523,12 +523,15 @@ conflux update --check
 
 Replaces the installed conflux — `/usr/local/bin/conflux`, or
 `%ProgramFiles%\conflux\conflux.exe` on Windows, whichever conflux runs the update — with the
-newest build of its own channel for this platform, and moves the boot service onto it. A
-release updates to the `latest` release of
-[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest), and a dev build
-(`conflux version` says when it is one) to the newest dev build, the pre-release `dev-latest`.
-Nothing crosses from one to the other: a dev build's anchor is pinned to the dev tree and a
-release's to the production tree, and the credential the machine holds is valid in one alone.
+newest build of its own channel for this platform, and moves the boot service onto it. The
+installed conflux decides, whichever conflux runs the update: it is run for its `version`,
+which says when it is a dev build. A release updates to the `latest` release of
+[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest), and a dev build to the
+newest dev build, the pre-release `dev-latest`. With nothing installed, or an installed file
+that does not run and so cannot say, the channel is that of the conflux running the update, and
+it says so. Nothing crosses from one to the other: a dev build's anchor is pinned to the dev
+tree and a release's to the production tree, and the credential the machine holds is valid in
+one alone.
 Moving between them is the install script's, by name ([install.md](install.md)), and a new
 identity. Only when typed: nothing checks on a schedule, so a machine changes version when
 somebody decides it should.

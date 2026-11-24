@@ -207,38 +207,93 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 	}
 }
 
-// TestAnUpdateFollowsItsChannel: a release updates to the newest `latest`, and a dev build to
-// the newest `dev-latest`, never to the other's: a dev build's anchor is pinned to the dev tree
-// and a release's to the production tree, and the credential a machine holds is valid in one
-// alone. So nothing is asked first, and no flag crosses from one to the other.
-func TestAnUpdateFollowsItsChannel(t *testing.T) {
-	asRoot(t, false)
-
-	defer func(was string) { version.Channel = was }(version.Channel)
-
-	exe := filepath.Join(t.TempDir(), "conflux")
-	if err := os.WriteFile(exe, []byte("\x7fELF an older build"), 0o755); err != nil {
-		t.Fatal(err)
+// TestAnUpdateFollowsTheInstalledConfluxsChannel: an update replaces the installed conflux with
+// the newest build of that conflux's channel -- `latest` for a release, `dev-latest` for a dev
+// build, as its `version` says -- whichever channel the conflux running the update is on: a dev
+// build's anchor is pinned to the dev tree and a release's to the production tree, and the
+// credential the machine holds is valid in the installed one's alone. So nothing is asked
+// first, and no flag crosses from one to the other.
+func TestAnUpdateFollowsTheInstalledConfluxsChannel(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	for channel, want := range map[string]string{"": "latest", "dev": "dev-latest"} {
-		version.Channel = channel
+	asRoot(t, false)
+	keepChannel(t)
+
+	for _, dev := range []bool{false, true} {
+		exe := filepath.Join(t.TempDir(), "conflux")
+		says := "conflux 1.0.0 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH
+		script := "#!/bin/sh\necho '" + says + "'\n"
+		want, running := "latest", "dev"
+
+		if dev {
+			script += "echo \"dev build: anchor's dev-latest, pinned to the dev tree\"\n"
+			want, running = "dev-latest", ""
+		}
+
+		if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		version.Channel = running
 		asked := serveRelease(t, []byte("\x7fELF the newest build"), exe)
 
-		out, _, code := capture(t, "update", "--check")
-		if code != ExitOK || !slices.Equal(*asked, []string{want}) || !strings.Contains(out, want+" (9.9.9)") {
-			t.Errorf("update --check on channel %q exited %d, reading %q:\n%s", channel, code, *asked, out)
+		out, errOut, code := capture(t, "update", "--check")
+		if code != ExitOK || !slices.Equal(*asked, []string{want}) || !strings.Contains(out, exe+" is "+says) {
+			t.Errorf("update --check of an installed dev build %v, run by channel %q, exited %d, reading %q:\n%s%s",
+				dev, running, code, *asked, out, errOut)
 		}
 
 		// Nothing more to ask for: it goes on to what any update needs, root, here refused.
 		if _, errOut, code := capture(t, "update"); code != ExitDenied {
-			t.Errorf("update on channel %q exited %d, want %d:\n%s", channel, code, ExitDenied, errOut)
+			t.Errorf("update of an installed dev build %v exited %d, want %d:\n%s", dev, code, ExitDenied, errOut)
 		}
 	}
 
 	if _, _, code := capture(t, "update", "--yes"); code != ExitUsage {
 		t.Errorf("update --yes exited %d, want %d: no flag crosses channels", code, ExitUsage)
 	}
+}
+
+// TestAnUpdateWithNoInstalledChannelFollowsThisBuild: with nothing installed, or an installed
+// file that does not run and so cannot say what it is, the conflux running the update decides
+// the channel, and says which it went by.
+func TestAnUpdateWithNoInstalledChannelFollowsThisBuild(t *testing.T) {
+	keepChannel(t)
+
+	for channel, want := range map[string]string{"": "latest", "dev": "dev-latest"} {
+		version.Channel = channel
+
+		exe := filepath.Join(t.TempDir(), "conflux")
+		asked := serveRelease(t, []byte("\x7fELF the newest build"), exe)
+
+		out, _, code := capture(t, "update", "--check")
+		if code != ExitOK || !slices.Equal(*asked, []string{want}) || !strings.Contains(out, "Nothing is installed at "+exe) {
+			t.Errorf("update --check with nothing installed, on channel %q, exited %d, reading %q:\n%s", channel, code, *asked, out)
+		}
+
+		if err := os.WriteFile(exe, []byte("\x7fELF no conflux that runs"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		*asked = nil
+
+		out, _, code = capture(t, "update", "--check")
+		if code != ExitOK || !slices.Equal(*asked, []string{want}) || !strings.Contains(out, exe+" does not run") {
+			t.Errorf("update --check of an installed file that does not run, on channel %q, exited %d, reading %q:\n%s",
+				channel, code, *asked, out)
+		}
+	}
+}
+
+// keepChannel puts version.Channel back as it was when the test ends.
+func keepChannel(t *testing.T) {
+	t.Helper()
+
+	was := version.Channel
+
+	t.Cleanup(func() { version.Channel = was })
 }
 
 // TestUpdateWritesTheInstalledConflux: an update replaces the conflux the installers put in

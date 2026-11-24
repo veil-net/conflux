@@ -14,7 +14,7 @@ import (
 // socket's lives where anchord's own account can write -- so a symlink is not followed, the
 // file it names neither made nor locked, and a FIFO is refused rather than blocked on.
 func TestHeldRefusesWhatIsNotALockFile(t *testing.T) {
-	for name, held := range map[string]func(string) (bool, error){"Held": Held, "HeldUntrusted": HeldUntrusted} {
+	for name, held := range askers {
 		dir := t.TempDir()
 
 		target := filepath.Join(dir, "nologin")

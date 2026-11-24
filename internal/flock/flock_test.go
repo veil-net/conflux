@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// askers are the two ways to ask whether a lock is held, by name: Held, and HeldUntrusted, for a
+// lock where anchord's account writes. TestHeldAsksWithoutCreating, on every platform, and
+// TestHeldRefusesWhatIsNotALockFile, on Unix, hold both to the same answers over it.
+var askers = map[string]func(string) (bool, error){"Held": Held, "HeldUntrusted": HeldUntrusted}
+
 // TestTryAcquireReportsAHeldLock: a lock somebody holds is reported held, with nothing
 // taken, and is free again once they let go.
 func TestTryAcquireReportsAHeldLock(t *testing.T) {
@@ -35,7 +40,7 @@ func TestTryAcquireReportsAHeldLock(t *testing.T) {
 // lock, free once they let go, and that a lock that is not there is nobody's -- and asking makes
 // no file.
 func TestHeldAsksWithoutCreating(t *testing.T) {
-	for name, held := range map[string]func(string) (bool, error){"Held": Held, "HeldUntrusted": HeldUntrusted} {
+	for name, held := range askers {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "x.lock")
 

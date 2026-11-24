@@ -289,7 +289,9 @@ func credential(
 			return nil, nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
 				"the credential is gone, and %s records the anchor it was, %s; enrolling again would draw "+
 					"a new identity and overlay address. Put the manifest back, or start over: conflux uninstall, "+
-					"which removes conflux as well, then install conflux again and run conflux up, proxy or observe",
+					"which removes conflux as well, then install conflux again and run conflux up, proxy or observe "+
+					"with --taint T, T the network's taint, which conflux status names before the uninstall; without it a "+
+					"new taint is minted, for a network of its own",
 				d.StateFile(), st.AnchorID)}
 		}
 

@@ -135,9 +135,9 @@ link() {
   fi
 }
 
-# next_steps says what to run now.
+# next_steps says what to run now: through $as, the sudo or doas that put conflux in place.
 next_steps() {
-  run=$(elevator)
+  run=$as
 
   # Run as root by sudo or doas, as `curl … | sudo sh` does: whoever asked still needs it.
   if [ -z "$run" ]; then

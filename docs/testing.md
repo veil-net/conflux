@@ -156,8 +156,8 @@ udev leaves it, so this holds whatever the runner's own device is.
 All of that is `make integration`. `make service-test` is the unit on its own, and enrols
 once, for the observer: `install` registers it without starting anything, the unit runs the
 root-only copy in `/var/lib/.conflux` rather than the file conflux was run from, and
-`uninstall` leaves no unit file, no `wants` link, no `/var/lib/.conflux`, no `conflux` account
-and no `/usr/local/bin/conflux`.
+`uninstall` leaves no unit file, no `wants` link, no drop-in (`systemctl set-property`'s
+included), no `/var/lib/.conflux`, no `conflux` account and no `/usr/local/bin/conflux`.
 Both build the image first, and CI runs the same command a developer does.
 
 In between, it takes every branch of what `anchord` runs as, under the real unit. Until the
@@ -183,6 +183,7 @@ them at `$VEILNET_API` in a random taint. Each leg reads anchord's uid, capabili
 | observing beside a userspace and a TUN anchor | `CAP_NET_RAW` added to what each mode has, under the same credential |
 | `start` over a unit changed by hand | the unit replaced by this conflux's |
 | a start by systemd over a unit changed by hand and a drop-in | the unit put back and the drop-in directory removed, by the supervisor itself |
+| a running unit whose file was deleted, then `uninstall` | no `conflux serve` left running, and no `wants` link |
 | an account named `conflux` that conflux did not make | root, saying so; `uninstall` leaves the account |
 
 `test/service-host.sh` is the same lifecycle against launchd and the SCM, on the machine

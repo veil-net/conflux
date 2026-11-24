@@ -430,8 +430,53 @@ for d in "${dropins[@]}"; do
 done
 docker exec "$NAME" systemctl stop conflux.service
 
-# install made the root, so it has to go -- and the account, and the executable the image
-# put where the installer puts it.
+# uninstall stops the unit itself, and only then disables it: a disable fails for a unit whose
+# file is gone, which systemd may still be running. Here the file is deleted under the running
+# unit, with no daemon-reload, under the configuration the legs above left -- a TUN and the
+# observer, under the run's credential.
+say "uninstall stops a running unit whose file was deleted"
+# serving is whether a supervisor runs: a process whose command line is the unit's ExecStart.
+serving() {
+  docker exec "$NAME" sh -c 'for c in /proc/[0-9]*/cmdline; do
+    [ "$(tr "\0" " " 2>/dev/null < "$c")" = "/var/lib/.conflux/conflux serve " ] && exit 0
+  done
+  exit 1'
+}
+start
+expect "a running unit" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
+serving || { echo "no conflux serve is running for uninstall to stop" >&2; journal; exit 1; }
+docker exec "$NAME" rm /etc/systemd/system/conflux.service
+docker exec "$NAME" conflux uninstall --yes
+if serving; then
+  echo "uninstall left conflux serve running from a unit whose file was gone" >&2
+  exit 1
+fi
+docker exec "$NAME" test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service \
+  || { echo "uninstall left the wants link of a unit whose file was gone" >&2; exit 1; }
+
+# Installed again, with the executable copied back where the image put it, and started once in
+# userspace, which makes the account again: the uninstall below has all of it to remove.
+docker cp "$(dirname "$0")/systemd/conflux" "$NAME":/usr/local/bin/conflux
+docker exec "$NAME" conflux install >/dev/null
+configure proxy
+start
+uid=""
+for _ in $(seq 150); do
+  uid=$(docker exec "$NAME" id -u conflux 2>/dev/null) && break
+  sleep 0.2
+done
+[ -n "$uid" ] || { echo "no conflux account was made again" >&2; exit 1; }
+expect "installed again" "uid=$uid caps=$(caps "$bufcap") nnp=1 groups=" "$bufrow"
+
+# A drop-in of systemctl set-property's, in system.control, made after the supervisor started
+# and so not removed by it: uninstall removes it with the unit.
+docker exec "$NAME" systemctl set-property conflux.service CPUQuota=50%
+docker exec "$NAME" test -d /etc/systemd/system.control/conflux.service.d \
+  || { echo "systemctl set-property made no drop-in for uninstall to remove" >&2; exit 1; }
+docker exec "$NAME" systemctl stop conflux.service
+
+# install made the root, so it has to go -- and the account, the drop-in, and the executable
+# the image put where the installer puts it.
 say "uninstall leaves nothing"
 docker exec "$NAME" conflux uninstall --yes
 docker exec "$NAME" test ! -e /usr/local/bin/conflux \
@@ -440,6 +485,10 @@ docker exec "$NAME" sh -c 'test ! -f /etc/systemd/system/conflux.service' \
   || { echo "the unit file survived uninstall" >&2; exit 1; }
 docker exec "$NAME" sh -c 'test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service' \
   || { echo "the unit's wants link survived uninstall" >&2; exit 1; }
+if anydropin; then
+  echo "a drop-in directory of the unit's survived uninstall" >&2
+  exit 1
+fi
 docker exec "$NAME" test ! -e /var/lib/.conflux || { echo "/var/lib/.conflux survived uninstall" >&2; exit 1; }
 if docker exec "$NAME" id conflux >/dev/null 2>&1; then
   echo "the conflux account survived uninstall" >&2

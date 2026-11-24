@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 )
 
 // Dirs is a conflux root: the machine's .conflux, or an ephemeral run's. Get the
@@ -27,15 +28,26 @@ type Dirs struct {
 	Root string
 }
 
-// root is where Default roots the machine's installation: the platform's own, or a
-// test's (UseRoot), in which case rooted is set and an ephemeral run is kept beside it.
+// platform is the platform's own root, worked out the first time Default is asked for it
+// rather than as the package is initialised: on Windows that is a call into shell32, which
+// version, cert, and every other command that never reads the root, need not load.
+var platform = sync.OnceValue(platformRoot)
+
+// root is a test's root, which Default gives in place of the platform's once UseRoot has set
+// rooted, with an ephemeral run kept beside it.
 var (
-	root   = platformRoot()
+	root   string
 	rooted bool
 )
 
 // Default is where this platform keeps conflux.
-func Default() Dirs { return Dirs{Root: root} }
+func Default() Dirs {
+	if rooted {
+		return Dirs{Root: root}
+	}
+
+	return Dirs{Root: platform()}
+}
 
 // UseRoot roots Default in dir, and an ephemeral run beside it in dir+"-ephemeral", until
 // restore is called. It is for tests alone: nothing in conflux calls it, and no flag or

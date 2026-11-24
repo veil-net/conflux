@@ -24,7 +24,8 @@ func platformRoot() string {
 // from the environment, which is whoever started conflux's to set: a %ProgramData% or a
 // %ProgramFiles% pointed elsewhere would move the root, or the conflux the installers put in
 // place, into a directory of their choosing. fallback, Windows' own default, is for a lookup
-// that fails.
+// that fails. The lookup loads shell32, so it is made only when a path is wanted: the root
+// once, the first time Default is asked (paths.go), and never at initialisation.
 func knownFolder(id *windows.KNOWNFOLDERID, fallback string) string {
 	if dir, err := windows.KnownFolderPath(id, windows.KF_FLAG_DEFAULT); err == nil && dir != "" {
 		return dir

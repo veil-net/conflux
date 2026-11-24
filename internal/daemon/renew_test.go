@@ -423,6 +423,58 @@ func TestARenewalWithNoAnchorRunningStands(t *testing.T) {
 	}
 }
 
+// TestARenewalBesideAStoppedObserverStands: an observer stopped by hand holds no credential to
+// install a renewal on, and anchorctl says so. That leaves nothing to install -- the observer
+// starts on the renewed chain on disk -- and is no failure: the renewal stands, installed on
+// the anchor beside it, the state mirrors it, and the timer's next look asks the issuer nothing.
+func TestARenewalBesideAStoppedObserverStands(t *testing.T) {
+	t.Setenv(fakeAnchorctlObserverEnv, "stopped")
+
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+	cfg := configOf(t, d)
+	cfg.Observer = &config.Observer{}
+
+	if err := config.Save(d, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	log := filepath.Join(t.TempDir(), "anchorctl.log")
+	t.Setenv(fakeAnchorctlLogEnv, log)
+
+	ctl := fakeCtl(t)
+
+	if err := RenewNow(t.Context(), d, ctl, nil); err != nil {
+		t.Errorf("RenewNow beside a stopped observer: %v", err)
+	}
+
+	if cmds := ran(t, log); !slices.Contains(cmds, "renew") || !slices.Contains(cmds, "observe") {
+		t.Errorf("anchorctl ran %v; want the renewal installed on the anchor and offered to the observer", cmds)
+	}
+
+	m := stored(t, d)
+
+	st, err := config.LoadState(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !st.IssuedAt.Equal(m.IssuedAt()) || !st.NotAfter.Equal(m.NotAfter()) || st.LastRenewalError != "" {
+		t.Errorf("the state (%v to %v, error %q) does not mirror the renewed manifest (%v to %v)",
+			st.IssuedAt, st.NotAfter, st.LastRenewalError, m.IssuedAt(), m.NotAfter())
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	(&Supervisor{Dirs: d, ctl: ctl}).renewLoop(ctx)
+
+	if n := is.calls.Load(); n != 1 {
+		t.Errorf("the issuer was asked %d times, want the one renewal", n)
+	}
+}
+
 // TestTheTimerWaitsAfterARenewal: a renewal that succeeds is followed by minSleep at least
 // before the timer looks again, as a failed one is, so an issuer answering with a window
 // already gone is not asked again at once, and again, for as long as it answers so.

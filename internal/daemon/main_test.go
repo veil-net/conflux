@@ -26,7 +26,8 @@ import (
 // anchorctl refuses an argument vector, with exit 2, and fakeAnchorctlStatusEnv what its
 // status says: "running", or "none" for a daemon holding no anchor, which refuses a renewal
 // as anchord does one with no anchor to install it on. fakeAnchorctlObserverEnv
-// is the observer's row in it -- "running", "stopped", "failed", or none at all -- and
+// is the observer's row in it -- "running", "stopped", "failed", or none at all; stopped, it
+// refuses a renewal as anchord does one with no observer running to install it on -- and
 // fakeAnchorctlCaptureEnv set makes `observe -start` refuse as a host that will not let the
 // daemon capture does. fakeAnchorctlRenewedEnv names a file `renew` writes the chain it was
 // handed on stdin to.
@@ -186,6 +187,18 @@ func fakeObserve(args []string) int {
 		chain, err := io.ReadAll(os.Stdin)
 		if err != nil || len(chain) == 0 {
 			fmt.Fprintln(os.Stderr, "anchorctl: the credential on stdin is empty")
+
+			return 1
+		}
+
+		// An observer stopped by hand has no credential to renew: anchord refuses with
+		// REASON_NOT_OBSERVING, which anchorctl explains so (anchor's cmd/anchorctl,
+		// hintForReason).
+		if os.Getenv(fakeAnchorctlObserverEnv) == "stopped" {
+			fmt.Fprintln(os.Stderr, "anchorctl: not observing, so there is no credential to renew; "+
+				"start the observer with the credential\n"+
+				"  the observer is not running, so it has no credential to renew; start it under one: "+
+				"anchorctl observe -start -identity FILE -root FILE -cred FILE")
 
 			return 1
 		}

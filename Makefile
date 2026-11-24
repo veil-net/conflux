@@ -150,8 +150,9 @@ build:
 # computes them, prints. And it runs in FIPS 140-3 mode: `version` names the module, the
 # module's integrity check passes as it starts (GODEBUG=fips140=debug says so), and with the
 # mode switched off it refuses, exit 70, rather than run without it. Each answer is read whole
-# before it is searched. CI runs it on every platform it builds a conflux to run on; OpenBSD's
-# build carries no module to hold it to.
+# before it is searched. CI runs it in the linux job and each platforms leg. FreeBSD's build runs
+# only in a VM with no Go, which holds it to the half that needs none, the integrity check and exit
+# 70 (test/service-bsd.sh); OpenBSD's carries no module to hold it to.
 buildcheck: build
 	@$(FIPS); set -- $$($(GO) env GOOS GOEXE); exe=$(BIN)/conflux$$2; \
 	if [ "$$(fips $$1)" = off ]; then echo "  FAIL $$1 builds without the module, so there is nothing to check"; exit 1; fi; \

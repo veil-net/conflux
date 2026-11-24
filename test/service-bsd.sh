@@ -74,6 +74,20 @@ installer=$(dirname "$0")/../install.sh
 say "conflux reports the FIPS 140-3 mode its build carries"
 "$CONFLUX" version | grep -qx "$fips" || fail "conflux version does not say: $fips"
 
+# FreeBSD's is held to the half of make buildcheck that needs no Go, which this VM has none of:
+# the module's integrity check passes as it starts, and with the mode switched off it refuses,
+# exit 70, rather than run without it. Each answer is read whole, then searched.
+if [ "$os" = freebsd ]; then
+  say "conflux passes the module's integrity check, and refuses to run with the mode off"
+  debug=$(GODEBUG=fips140=debug "$CONFLUX" version 2>&1) || fail "conflux version failed under GODEBUG=fips140=debug:
+$debug"
+  printf '%s\n' "$debug" | grep -q '^fips140: verified' || fail "the module's integrity check did not say it verified:
+$debug"
+  code=0
+  GODEBUG=fips140=off "$CONFLUX" version >/dev/null 2>&1 || code=$?
+  [ "$code" = 70 ] || fail "with GODEBUG=fips140=off conflux exited $code, not 70"
+fi
+
 # The certificate toolkit makes artifacts other people rely on, so it runs only where the
 # module does: FreeBSD makes and checks an ML-DSA certificate, OpenBSD refuses with 70.
 say "conflux cert runs where the module does, and refuses where it does not"

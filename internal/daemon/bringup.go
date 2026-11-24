@@ -288,8 +288,8 @@ func credential(
 		if st.AnchorID != "" {
 			return nil, nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
 				"the credential is gone, and %s records the anchor it was, %s; enrolling again would draw "+
-					"a new identity and overlay address. Put the manifest back; or, for a credential an issuer grants, "+
-					"conflux enrol --manifest FILE, then conflux start; or start over: keep a copy of %s outside the "+
+					"a new identity and overlay address. Put the manifest back, or, for a credential an issuer grants, "+
+					"conflux enrol --manifest FILE, and then conflux start; or start over: keep a copy of %s outside the "+
 					"directory, conflux uninstall, which removes conflux and the directory, install the same build "+
 					"again (CONFLUX_VERSION=dev-latest for a dev build), and run conflux up, proxy or observe with the "+
 					"copy's settings, --taint for each taint and --api for its apiBaseUrl if it has one. "+

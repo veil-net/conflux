@@ -21,13 +21,14 @@ func TestALostManifestIsNotReplaced(t *testing.T) {
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: srv.URL}
 
 	_, _, _, err := credential(t.Context(), d, &config.State{AnchorID: fakeAnchorID}, cfg, nopReporter{})
-	// The ways out: an issued credential enrolled as the machine stands, then started as it is
-	// configured (up would change a userspace or observing machine's mode); or, starting over, a copy of
+	// The ways out: the manifest put back, or an issued credential enrolled as the machine stands,
+	// either then started as it is configured, the service having stopped for good (up would change
+	// a userspace or observing machine's mode); or, starting over, a copy of
 	// conflux.json kept, which the uninstall removes with conflux, the same build installed again (a
 	// dev build's credential is the dev tree's), and the verbs that take its taints and API; and
 	// where the steps are written out.
 	for _, want := range []string{
-		"conflux enrol --manifest", "then conflux start", "copy of " + d.ConfigFile(), "conflux uninstall", "install the same build",
+		"Put the manifest back, or, for a credential an issuer grants, conflux enrol --manifest FILE, and then conflux start", "copy of " + d.ConfigFile(), "conflux uninstall", "install the same build",
 		"conflux up, proxy or observe", "--taint", "--api", "credentials.md",
 	} {
 		if !Permanent(err) || !strings.Contains(err.Error(), want) {

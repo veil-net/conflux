@@ -47,12 +47,13 @@ that is a bad enough outcome to be worth ordering the code around.
 It is also why `conflux uninstall` asks before it runs, and why a machine whose
 `manifest.b64` is gone while `state.json` still names the anchor it was is not enrolled
 again: the supervisor refuses it for good, naming the file, since drawing a new identity
-and address is a person's decision. Put the manifest back: from a backup, or, for a
-guardian-issued one, as its guardian downloads it again ([config.md](config.md)). For a
-credential an issuer grants, `conflux enrol --manifest FILE` installs it on the machine
-as it stands, and `conflux start` then brings the machine back as it is configured --
-not `conflux up`, which would change a userspace or observing machine's mode. Otherwise
-start over with a new identity:
+and address is a person's decision. Put the manifest back -- from a backup, or, for a
+guardian-issued one, as its guardian downloads it again ([config.md](config.md)) -- or,
+for a credential an issuer grants, install it with `conflux enrol --manifest FILE` on
+the machine as it stands. Either way the refusal has left no anchor running, so `conflux
+start` then brings the machine back as it is configured -- not `conflux up`, which would
+change a userspace or observing machine's mode. Otherwise start over with a new
+identity:
 
 1. Keep a copy of `conflux.json`, outside `.conflux`, which holds the machine's settings:
    its taints, its `apiBaseUrl` if it has one (none means the production API), and its

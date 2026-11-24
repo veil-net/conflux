@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,49 +20,49 @@ import (
 )
 
 // updateFrom, updateExecutable and updateAtTerminal are what a test points elsewhere: the release
-// an update reads, the file it replaces, and whether there is a terminal to ask at before a dev
-// build replaces it (ui.IsTerminal, which a test's own stdin never is). On Unix, updateLink is
-// the fourth: the link it makes for sudo.
+// an update reads, the file it replaces, and whether there is a terminal to ask at before it
+// replaces it (ui.IsTerminal, which a test's own stdin never is). On Unix, updateLink is the
+// fourth: the link it makes for sudo.
 var (
 	updateFrom       = update.Source{}
 	updateExecutable = paths.InstalledExecutable
 	updateAtTerminal = ui.IsTerminal
 )
 
-// installed says what the conflux an update replaces is: nothing, this build where it is this
-// process, and otherwise what it says it is when run for its `version`, or that it does not run.
-func installed(ctx context.Context, exe string) string {
+// installed says what the conflux an update replaces is, and whether it is a dev build. Nothing
+// is none. This process is this build, a dev build where version.Dev says so. Any other file is
+// what it says when run for its `version`, a dev build where it says so (devBuild), or a file
+// that does not run, which cannot say what it is, and so is none.
+func installed(ctx context.Context, exe string) (says string, dev bool) {
 	if _, err := os.Stat(exe); errors.Is(err, os.ErrNotExist) {
-		return fmt.Sprintf("Nothing is installed at %s.", exe)
+		return fmt.Sprintf("Nothing is installed at %s.", exe), false
 	}
 
 	if isThis(exe) {
-		return fmt.Sprintf("%s is %s.", exe, version.String())
+		return fmt.Sprintf("%s is %s.", exe, version.String()), version.Dev()
 	}
 
-	line, err := versionOf(ctx, exe)
+	line, dev, err := versionOf(ctx, exe)
 	if err != nil {
-		return fmt.Sprintf("%s does not run here: %v.", exe, err)
+		return fmt.Sprintf("%s does not run here: %v.", exe, err), false
 	}
 
-	return fmt.Sprintf("%s is %s.", exe, line)
+	return fmt.Sprintf("%s is %s.", exe, line), dev
 }
 
-// confirmDev asks at a terminal before update --dev installs a dev build, saying what one is,
-// and says whether to go on, and where not, update's exit. Off a terminal it refuses, as up
-// refuses an IPv4 nobody is there to give, and nothing gets past that; declined, nothing
-// changes, and the exit is a declined observe's or uninstall's, 2.
-func confirmDev() (exit int, ok bool) {
+// askFirst asks at a terminal before update installs what, the release or the dev build, saying
+// first why it asks, and says whether to go on, and where not, update's exit. Off a terminal it
+// refuses, saying refused, as up refuses an IPv4 nobody is there to give, and nothing gets past
+// that; declined, nothing changes, and the exit is a declined observe's or uninstall's, 2.
+func askFirst(what, why, refused string) (exit int, ok bool) {
 	if !updateAtTerminal() {
-		return fail(errors.New("update --dev asks before it installs a dev build, and there is no terminal to ask at")), false
+		return fail(errors.New(refused)), false
 	}
 
-	ui.Printf("\nA dev build is the pre-release dev-latest, built from conflux's dev branch with anchor's\n" +
-		"dev build inside it. Its anchor is pinned to the dev tree (https://api-dev.veilnet.com.au),\n" +
-		"so a credential from the production tree, which a release enrols in, does not work with it.\n\n")
+	ui.Printf("\n%s\n\n", why)
 
-	if !ui.Confirm("Install the dev build?") {
-		ui.Errf("the dev build was not installed, and nothing changed")
+	if !ui.Confirm("Install the " + what + "?") {
+		ui.Errf("the %s was not installed, and nothing changed", what)
 
 		return ExitUsage, false
 	}
@@ -110,11 +111,13 @@ func runUpdate(ctx context.Context, args []string) int {
 		"  conflux update --dev             the same with the newest dev build, once asked\n"+
 		"  conflux update [--dev] --check   say whether there is one, and change nothing\n\n"+
 		"The newest release is the `latest` release of github.com/veil-net/conflux, whatever\n"+
-		"is installed or running. The newest dev build is the pre-release `dev-latest`, built\n"+
+		"build runs the update. The newest dev build is the pre-release `dev-latest`, built\n"+
 		"from conflux's dev branch with anchor's dev build inside it. Its anchor is pinned to\n"+
-		"the dev tree (https://api-dev.veilnet.com.au), so a credential from the production\n"+
-		"tree does not work with it: --dev asks at a terminal before it installs one, and\n"+
-		"refuses where there is no terminal to ask at. --check asks nothing.\n"+
+		"the dev tree (https://api-dev.veilnet.com.au) and a release's to the production tree,\n"+
+		"and neither works with a credential from the other tree. So --dev asks at a terminal\n"+
+		"before it installs a dev build, and a plain update before it puts the release in\n"+
+		"place of a dev build, as the installed conflux's version says it is; each refuses\n"+
+		"where there is no terminal to ask at. --check asks nothing.\n"+
 		"Held to the SHA-256 the release lists, into %s, where the installer\n"+
 		"puts it. A running anchor is restarted on the new conflux; a stopped one is left\n"+
 		"stopped, and starts on it next time.\n\n", paths.InstalledExecutable()))
@@ -154,7 +157,8 @@ func runUpdate(ctx context.Context, args []string) int {
 		return ExitOK
 	}
 
-	ui.Printf("%s\nThe newest %s is %s, built from %s.\n", installed(ctx, exe), what, rel.Name, short(rel.Commit))
+	says, installedDev := installed(ctx, exe)
+	ui.Printf("%s\nThe newest %s is %s, built from %s.\n", says, what, rel.Name, short(rel.Commit))
 
 	if *check {
 		ui.Printf("\n  %s    install it\n", install)
@@ -166,11 +170,27 @@ func runUpdate(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	// A dev build is asked for once there is one to install, named above, and before anything
-	// is downloaded or replaced; after the privilege check, so the command typed again under
-	// sudo asks once, rather than once before the refusal and again after it.
-	if *dev {
-		if exit, ok := confirmDev(); !ok {
+	// One tree's build in place of what may be the other's is asked for once there is one to
+	// install, named above, and before anything is downloaded or replaced; after the privilege
+	// check, so the command typed again under sudo asks once, rather than once before the
+	// refusal and again after it. --dev asks its own question alone, of a dev build too.
+	var why, refused string
+
+	switch {
+	case *dev:
+		why = "A dev build is the pre-release dev-latest, built from conflux's dev branch with anchor's\n" +
+			"dev build inside it. Its anchor is pinned to the dev tree (https://api-dev.veilnet.com.au),\n" +
+			"so a credential from the production tree, which a release enrols in, does not work with it."
+		refused = "update --dev asks before it installs a dev build, and there is no terminal to ask at"
+	case installedDev:
+		why = "The conflux installed here is a dev build, whose anchor is pinned to the dev tree. The\n" +
+			"release's anchor is pinned to the production tree, so a credential this machine holds from\n" +
+			"the dev tree does not work with it: the anchor will not start on it."
+		refused = "update asks before it installs the release in place of a dev build, and there is no terminal to ask at"
+	}
+
+	if why != "" {
+		if exit, ok := askFirst(what, why, refused); !ok {
 			return exit
 		}
 	}
@@ -191,7 +211,7 @@ func runUpdate(ctx context.Context, args []string) int {
 
 	// Run before it replaces anything. The digest says these are the bytes the release
 	// holds; this says they are a conflux that starts on this machine.
-	now, err := versionOf(ctx, tmp)
+	now, _, err := versionOf(ctx, tmp)
 	if err != nil {
 		return fail(fmt.Errorf("the downloaded conflux does not run on this machine, so nothing was replaced: %w", err))
 	}
@@ -256,19 +276,20 @@ func moveService(ctx context.Context, exe string) int {
 	return ExitOK
 }
 
-// versionOf runs the conflux at path for its `version`, and returns the line that leads it.
-func versionOf(ctx context.Context, path string) (string, error) {
+// versionOf runs the conflux at path for its `version`, and returns the line that leads it and
+// whether it says it is a dev build (devBuild).
+func versionOf(ctx context.Context, path string) (line string, dev bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	out, err := runQuiet(ctx, path, os.Environ(), []string{"version"})
 
-	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
-	if err != nil || !strings.HasPrefix(line, "conflux ") {
-		return "", errors.New(strings.TrimSpace(line + " " + errString(err)))
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if err != nil || !strings.HasPrefix(lines[0], "conflux ") {
+		return "", false, errors.New(strings.TrimSpace(lines[0] + " " + errString(err)))
 	}
 
-	return line, nil
+	return lines[0], slices.ContainsFunc(lines[1:], func(l string) bool { return strings.HasPrefix(l, devBuild) }), nil
 }
 
 // runChild runs exe with args on this terminal and returns its exit code.

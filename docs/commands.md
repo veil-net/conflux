@@ -544,10 +544,11 @@ conflux update [--dev] --check
 Replaces the installed conflux — `/usr/local/bin/conflux`, or
 `%ProgramFiles%\conflux\conflux.exe` on Windows, whichever conflux runs the update — with the
 newest release for this platform, the `latest` release of
-[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest), whatever build is
-installed or running, and moves the boot service onto it. It says what is installed: what the
-installed file says it is when run for its `version`, or that nothing is, or that it does not
-run.
+[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest), whatever build runs
+the update, and moves the boot service onto it. It says what is installed: what the installed
+file says it is when run for its `version`, or that nothing is, or that it does not run. Only
+when typed: nothing checks on a schedule, so a machine changes version when somebody decides it
+should.
 
 `--dev` takes the newest dev build instead: the pre-release `dev-latest`, built from conflux's
 `dev` branch with anchor's dev build inside it. Its anchor is pinned to the dev tree
@@ -557,8 +558,17 @@ first: at a terminal it says what a dev build is and asks `Install the dev build
 only `y` or `yes` goes on, and anything else, the end of input included, changes nothing and
 exits 2; with no terminal to ask at it is refused, exit 1, and no flag gets past that. It asks
 once there is a dev build to install, named above the question, after the check for root and
-before anything is downloaded. Only when typed: nothing checks on a schedule, so a machine
-changes version when somebody decides it should.
+before anything is downloaded.
+
+A plain update asks too where the installed conflux is a dev build: where its `version` says so,
+in its `dev build:` line, or, where it is the conflux running the update, where that one is. The
+release's anchor is pinned to the production tree, so a credential the machine holds from the
+dev tree does not work with it: the anchor will not start on it. At a terminal it says so and
+asks `Install the release? [y/N]`, in the same place and on the same terms as `--dev`'s
+question: a no changes nothing and exits 2, and with no terminal to ask at it is refused, exit
+1, with no flag past it. Nothing installed, an installed release, and a file that does not run,
+which cannot say what it is, are not asked about. `--dev` asks its own question alone, so a dev
+build updated with it is asked once.
 
 "Up to date" is a digest rather than a version string. The installed file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge
@@ -596,8 +606,8 @@ No token is needed or sent: the repository is public.
 | Situation | |
 |---|---|
 | the installed conflux is the newest release, or with `--dev` the newest dev build | says so, exit 0, nothing changed, nothing asked |
-| `--dev`, declined at the terminal | says so, exit 2, nothing changed |
-| `--dev` with no terminal to ask at | refused, exit 1, nothing changed |
+| `--dev`, or a plain update of an installed dev build, declined at the terminal | says so, exit 2, nothing changed |
+| `--dev`, or a plain update of an installed dev build, with no terminal to ask at | refused, exit 1, nothing changed |
 | the anchor is running | the new conflux's `start` restarts it on the new version, and its exit code is `update`'s |
 | installed, not running | left stopped, as `down` left it; the boot service's copy is refreshed, so it starts on the new version next time |
 | no boot service | the installed conflux is replaced, and that is all |
@@ -673,7 +683,7 @@ other refusal — passes through untouched.
 |---|---|
 | 0 | success |
 | 1 | failure |
-| 2 | usage: a flag that does not parse, a command given too few or too many arguments (`cert`'s commands, and `enrol` given no `--manifest`; and a stray argument, named on a line of its own, given to `up`, `install`, `down`, `uninstall`, `serve`, `start`, `renew`, `update`, `observe`, `version` or `enrol`, which take flags and nothing else), and `cert`, `cert ca` or `cert p12` given no command, said on stderr with the usage, or the list, beneath it. And a refusal of what was typed, said on stderr in a line of its own: an option conflux does not have, a `cert` command that does not exist, anchorctl's `stop` or `restart`, a flag `start`, `renew`, `observe` or `proxy` does not have (anchorctl has commands of those names, and the line says how to reach them), `proxy` with nothing to serve, `observe` where there is no capture, `uninstall` beside a live ephemeral run, or what asks to be confirmed — `uninstall`, `observe` in an anchor's place, `update --dev` at a terminal — and was not. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
+| 2 | usage: a flag that does not parse, a command given too few or too many arguments (`cert`'s commands, and `enrol` given no `--manifest`; and a stray argument, named on a line of its own, given to `up`, `install`, `down`, `uninstall`, `serve`, `start`, `renew`, `update`, `observe`, `version` or `enrol`, which take flags and nothing else), and `cert`, `cert ca` or `cert p12` given no command, said on stderr with the usage, or the list, beneath it. And a refusal of what was typed, said on stderr in a line of its own: an option conflux does not have, a `cert` command that does not exist, anchorctl's `stop` or `restart`, a flag `start`, `renew`, `observe` or `proxy` does not have (anchorctl has commands of those names, and the line says how to reach them), `proxy` with nothing to serve, `observe` where there is no capture, `uninstall` beside a live ephemeral run, or what asks to be confirmed — `uninstall`, `observe` in an anchor's place, `update --dev`, or `update` of an installed dev build, at a terminal — and was not. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
 | 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
 | 13 | needs root or Administrator, or a `status` that cannot read the configuration, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |

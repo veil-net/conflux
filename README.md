@@ -314,7 +314,7 @@ read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 | `conflux install` | register the boot service; start it if a configuration exists |
 | `conflux uninstall` | remove everything of conflux's from the machine: the boot service, the configuration, the identity and conflux itself |
 | `conflux version` | conflux's version, and the anchor build it carries |
-| `conflux update [--dev] [--check]` | replace the installed conflux with the newest release, `latest`, or with `--dev`, once asked at a terminal, the newest dev build, `dev-latest`; verified, and the anchor restarted on it |
+| `conflux update [--dev] [--check]` | replace the installed conflux with the newest release, `latest`, once asked at a terminal where the installed one is a dev build, or with `--dev`, once asked, the newest dev build, `dev-latest`; verified, and the anchor restarted on it |
 | `conflux cert genkey \| req \| selfsign \| sign \| verify \| show \| convert \| match \| fingerprint \| crl \| ca \| p12 \| probe \| serve` | make and check ML-DSA (and ECDSA, RSA, Ed25519) keys, certificates and revocation lists, keep a CA, bundle PKCS#12, and probe and serve TLS, in FIPS 140-3 mode; see [cert.md](docs/cert.md) |
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … and the realm's control over its members, `block`, `taints`, `subnets`, `telemetry` |

@@ -579,7 +579,7 @@ other tree's anchor refuses it at every start, which the supervisor gives up on 
 is a new identity in the other tree, with a new AnchorID and a new overlay address:
 `sudo conflux uninstall --yes`, then install conflux again, the other build (uninstall removes
 conflux too; `CONFLUX_VERSION=dev-latest` names the dev build, [install.md](install.md)), and
-`sudo conflux up`, with `--api https://api-dev.veilnet.com.au` for a dev build.
+`sudo conflux up --taint T`, `T` the network's taint in that tree (without it conflux mints a network of its own), with `--api https://api-dev.veilnet.com.au` for a dev build.
 
 "Up to date" is a digest rather than a version string. The installed file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge

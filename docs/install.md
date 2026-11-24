@@ -67,7 +67,7 @@ release's anchor is pinned to the production tree, so a credential from the dev 
 work with it ([commands.md](commands.md#conflux-update)). Moving a machine between a dev build
 and the release is a new identity in the other tree, with a new AnchorID and a new overlay
 address: `sudo conflux uninstall --yes`, then install conflux again, the other build (uninstall
-removes conflux too; `CONFLUX_VERSION=dev-latest` names the dev build), and `sudo conflux up`,
+removes conflux too; `CONFLUX_VERSION=dev-latest` names the dev build), and `sudo conflux up --taint T`, `T` the network's taint in that tree (without it conflux mints a network of its own),
 with `--api https://api-dev.veilnet.com.au` for a dev build.
 
 The BSDs have no `curl` in the base system, and the script uses whatever downloader it

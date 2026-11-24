@@ -108,7 +108,7 @@ ANCHOR_TAG ?=
 # on one machine does not race the first for the name.
 IMAGE ?= conflux-systemd-test
 
-.PHONY: all anchor-bins build test race vet fmt fmtcheck lint vulncheck tidycheck docscheck golden cross dist image service-test integration clean help
+.PHONY: all anchor-bins build buildcheck test race vet fmt fmtcheck lint vulncheck tidycheck docscheck golden cross dist image service-test integration clean help
 
 # Every check that needs neither Docker nor the network. The utility checks --
 # fmtcheck, lint, tidycheck, docscheck -- run here and not in CI, which verifies that
@@ -142,6 +142,37 @@ build:
 	@$(STAMP); $(FIPS); set -- $$($(GO) env GOOS GOARCH GOEXE); \
 	GOFIPS140=$$(fips $$1) CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS) $$(stamp $$1-$$2$$3)" -o $(BIN)/conflux$$3 . && \
 	ls -l $(BIN)/conflux$$3 | awk '{printf "  %.1f MB  %s\n", $$5/1048576, $$NF}'
+
+# buildcheck holds the conflux `make build` makes for this machine to what ships. The digests
+# stamped into it are the pair's own: a stamp describing other bytes would name the extraction
+# directory for a pair it does not carry, so every line of `version` but the first -- the
+# version and commit, which only make stamps -- must be what `go run`, which stamps nothing and
+# computes them, prints. And it runs in FIPS 140-3 mode: `version` names the module, the
+# module's integrity check passes as it starts (GODEBUG=fips140=debug says so), and with the
+# mode switched off it refuses, exit 70, rather than run without it. Each answer is read whole
+# before it is searched. CI runs it on every platform it builds a conflux to run on; OpenBSD's
+# build carries no module to hold it to.
+buildcheck: build
+	@$(FIPS); set -- $$($(GO) env GOOS GOEXE); exe=$(BIN)/conflux$$2; \
+	if [ "$$(fips $$1)" = off ]; then echo "  FAIL $$1 builds without the module, so there is nothing to check"; exit 1; fi; \
+	stamped=$$("$$exe" version | sed 1d); computed=$$($(GO) run . version | sed 1d); \
+	if [ -z "$$stamped" ] || [ "$$stamped" != "$$computed" ]; then \
+		echo "  FAIL the digests stamped into $$exe are not the pair's own"; \
+		printf '%s\n' "  stamped:" "$$stamped" "  computed by go run:" "$$computed"; exit 1; \
+	fi; \
+	echo "  ok   the digests stamped into $$exe are the pair's own"; \
+	v=$$("$$exe" version); \
+	if ! printf '%s\n' "$$v" | grep -qx "fips140 on, Go Cryptographic Module $(GOFIPS140)"; then \
+		echo "  FAIL $$exe does not say it runs in FIPS 140-3 mode against Go Cryptographic Module $(GOFIPS140):"; \
+		printf '%s\n' "$$v"; exit 1; \
+	fi; \
+	d=$$(GODEBUG=fips140=debug "$$exe" version 2>&1); \
+	if ! printf '%s\n' "$$d" | grep -q '^fips140: verified'; then \
+		echo "  FAIL the module's integrity check did not say it verified:"; printf '%s\n' "$$d"; exit 1; \
+	fi; \
+	rc=0; GODEBUG=fips140=off "$$exe" version >/dev/null 2>&1 || rc=$$?; \
+	if [ "$$rc" != 70 ]; then echo "  FAIL with GODEBUG=fips140=off $$exe exited $$rc, not 70"; exit 1; fi; \
+	echo "  ok   $$exe runs in FIPS 140-3 mode against Go Cryptographic Module $(GOFIPS140), its integrity check verified, and exits 70 with the mode off"
 
 test:
 	$(GO) test $(TESTEXEC) ./...
@@ -302,6 +333,7 @@ help:
 	@echo "                   FETCH=1 to fetch the pinned binaries from anchor's release"
 	@echo "                   (needs ANCHOR_RELEASE_TOKEN; anchor is private)"
 	@echo "  make build       build for this machine, stamped, into $(BIN)/"
+	@echo "  make buildcheck  build, then hold it to what ships: its stamped digests, FIPS 140-3 mode"
 	@echo "  make test        run the tests, with the FIPS module refusing what it does not approve"
 	@echo "  make race        run them under the race detector, the same way"
 	@echo "  make vet         go vet for this machine"

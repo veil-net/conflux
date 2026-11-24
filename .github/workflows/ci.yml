@@ -93,29 +93,12 @@ jobs:
       - name: every target vets, test files included
         run: make cross
 
-      # The digests make build stamps are the pair's own: a stamp describing other bytes
-      # would name the extraction directory for a pair this conflux does not carry. The
-      # first line, the version and commit, is stamped only by make.
-      - name: the stamped digests are the pair's own
-        run: |
-          set -euo pipefail
-          make build >/dev/null
-          diff <(bin/conflux version | sed 1d) <(go run . version | sed 1d)
-
-      # The binary that ships runs in FIPS 140-3 mode: the module's integrity check passes
-      # as it starts, and a GODEBUG that switches the mode off is refused, exit 70, rather
-      # than run without it.
-      - name: conflux runs in FIPS 140-3 mode, and refuses to run with it off
-        run: |
-          set -euo pipefail
-          # Each answer read whole before it is searched: grep -q stops at its first match,
-          # and conflux writing a line after it would then end the step on SIGPIPE.
-          version=$(bin/conflux version)
-          grep -qx "fips140 on, Go Cryptographic Module $GOFIPS140" <<<"$version"
-          debug=$(GODEBUG=fips140=debug bin/conflux version 2>&1)
-          grep -q '^fips140: verified' <<<"$debug"
-          rc=0; GODEBUG=fips140=off bin/conflux version >/dev/null 2>&1 || rc=$?
-          [ "$rc" = 70 ] || { echo "::error::with fips140=off conflux exited $rc, not 70" >&2; exit 1; }
+      # The conflux make build makes is what ships: the digests stamped into it are the
+      # pair's own, it runs in FIPS 140-3 mode with the module's integrity check passing, and
+      # it refuses to run with the mode off, exit 70 (the Makefile's buildcheck). The
+      # platforms legs run the same on their own builds.
+      - name: the stamped build is the pair's own, and runs in FIPS 140-3 mode
+        run: make buildcheck
 
       # conflux's HTTPS is crypto/tls in FIPS 140-3 mode, which offers only approved parameters,
       # so a host that accepts none of them fails an enrolment, an update or a wintun fetch
@@ -300,6 +283,13 @@ jobs:
           fi
           grep -c '^--- PASS' test.log | xargs echo "tests passed:"
 
+      # The conflux make build makes for this platform, held to what ships as the linux job
+      # holds its own: the stamped digests the pair's, FIPS 140-3 mode with the integrity check
+      # passing, and exit 70 with the mode off. The service suite below runs this build.
+      - name: the stamped build is the pair's own, and runs in FIPS 140-3 mode
+        shell: bash
+        run: make buildcheck
+
       # launchd and the SCM for real, which the suite only compiles: install registers and
       # starts nothing, status and down answer, a userspace anchord serves as its own
       # account -- _conflux, or LOCAL SERVICE -- the observer captures as that account, under
@@ -311,7 +301,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          make build >/dev/null
           if [ "$RUNNER_OS" = macOS ]; then
             sudo VEILNET_API="$VEILNET_API" ./test/service-host.sh bin/conflux
           else

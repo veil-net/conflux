@@ -118,7 +118,7 @@ func TestTheObserverIsRefusedWhereThereIsNoCapture(t *testing.T) {
 // be sent to -- no scheme, no host, plain http, another scheme -- is refused before anything
 // starts, rather than failing every call after it, for ever. Plain http is a test's alone.
 func TestValidateRefusesAnAPIThatCannotWork(t *testing.T) {
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "")
+	t.Setenv(InsecureAPIEnv, "")
 
 	for _, api := range []string{"api-dev.veilnet.com.au", "http://api.veilnet.com.au", "https://", "ftp://x"} {
 		c := base(ModeProxy)
@@ -138,7 +138,7 @@ func TestValidateRefusesAnAPIThatCannotWork(t *testing.T) {
 		}
 	}
 
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+	t.Setenv(InsecureAPIEnv, "1")
 
 	c := base(ModeProxy)
 	c.APIBaseURL = "http://127.0.0.1:8080"

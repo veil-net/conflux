@@ -494,7 +494,7 @@ func TestNoCredentialNoObserver(t *testing.T) {
 
 	t.Setenv(fakeAnchorctlStatusEnv, "none")
 	t.Setenv(fakeAnchordListenEnv, "1")
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+	t.Setenv(config.InsecureAPIEnv, "1")
 
 	s, log := supervised(t, "serve")
 

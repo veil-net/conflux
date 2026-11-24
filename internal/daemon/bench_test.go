@@ -163,7 +163,7 @@ func BenchmarkAnchorCheck(b *testing.B) {
 // stored files, the POST, the splice, the writes and the hot install.
 func BenchmarkRenewal(b *testing.B) {
 	b.Cleanup(paths.UseRoot(b.TempDir()))
-	b.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+	b.Setenv(config.InsecureAPIEnv, "1")
 
 	chain := base64.StdEncoding.EncodeToString(make([]byte, 6<<10))
 

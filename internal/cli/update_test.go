@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -64,7 +65,7 @@ func serveRelease(t *testing.T, body []byte, exe string) *[]string {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+	t.Setenv(config.InsecureAPIEnv, "1")
 	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	was, wasExe := updateFrom, updateExecutable

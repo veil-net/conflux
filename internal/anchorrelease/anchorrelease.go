@@ -1,6 +1,6 @@
 // Package anchorrelease fetches the anchor binaries from a release of the anchor repository.
 //
-// The binaries are not in git -- fourteen release builds are about 330 MB -- so a machine
+// The binaries are not in git -- fourteen release builds are about 370 MB -- so a machine
 // with no anchor checkout, which is every CI runner, fetches them from here.
 //
 // What is fetched is the *pinned* build. An anchor pinned to the genesis realm refuses to
@@ -78,7 +78,7 @@ const (
 	formatVersion = 1
 
 	// maxManifest bounds the JSON; maxBinary bounds one download. An anchord is about
-	// 30 MB and anchorctl about 14, so 200 MB is far above anything real and far below
+	// 37 MB and anchorctl about 16, so 200 MB is far above anything real and far below
 	// anything that could fill a disk before the write fails.
 	maxManifest = 1 << 20
 	maxBinary   = 200 << 20

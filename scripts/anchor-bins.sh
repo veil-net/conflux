@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Put the anchor binaries where //go:embed can find them.
 #
-# They are not in git: fourteen release builds are about 300 MB, and committing that
+# They are not in git: fourteen release builds are about 370 MB, and committing that
 # costs it permanently, on every clone, for every refresh. So a build populates
 # anchor/bin/ from a local anchor checkout instead.
 #

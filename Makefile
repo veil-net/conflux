@@ -115,7 +115,7 @@ IMAGE ?= conflux-systemd-test
 all: fmtcheck lint tidycheck docscheck test cross dist
 
 # anchor-bins puts the anchor binaries where //go:embed can find them. They are not in
-# git -- fourteen release builds are about 300 MB -- so a fresh clone runs this once
+# git -- fourteen release builds are about 370 MB -- so a fresh clone runs this once
 # before its first build.
 #
 # Three sources in order: a local release/ (pinned), a local dist/ (unpinned, taken

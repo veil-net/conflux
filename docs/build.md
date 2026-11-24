@@ -4,7 +4,7 @@
 $ git clone https://github.com/veil-net/conflux && cd conflux
 $ make anchor-bins            # populate anchor/bin -- see below; a bare clone has none
 $ make build
-  50.1 MB  bin/conflux
+  60.8 MB  bin/conflux
 ```
 
 Go 1.27.4 or newer, and nothing else. The only dependency is `golang.org/x/sys`. The
@@ -16,7 +16,7 @@ build fails.
 
 ## Where the anchor binaries come from
 
-**They are not in git.** Fourteen release builds are about 300 MB, and committing that
+**They are not in git.** Fourteen release builds are about 370 MB, and committing that
 costs it permanently — on every clone, for every contributor, every time they are
 refreshed. So `anchor/bin/` is ignored, and a build populates it:
 
@@ -74,7 +74,7 @@ $ make anchor-bins FETCH=1
 anchor-fetch: release: veil-net/anchor @ latest
 anchor-fetch: commit:  0e68ba25f3019fdfc331cd8763f40fbdd641538a
 anchor-fetch: realm:   realmtglwuedqqa33e364nv73p46jk3kwi67lxjmnntz2mv3mb3mklasq
-anchor-fetch:   ok   anchord-linux-amd64           29.7 MB  06cc7917c8fc  fetched
+anchor-fetch:   ok   anchord-linux-amd64           36.2 MB  06cc7917c8fc  fetched
   …
 anchor-fetch: 14/14 in place, digests verified
 ```
@@ -219,7 +219,7 @@ skip, and `make dist` refuses:
 
 ### Why not committed, or LFS
 
-**Committed**, the fourteen cost about 300 MB per refresh, permanently, on every clone.
+**Committed**, the fourteen cost about 370 MB per refresh, permanently, on every clone.
 
 **Git LFS** is worse than it looks. The Go module proxy serves LFS *pointer files*, so
 `go install github.com/veil-net/conflux@latest` would embed 130 bytes of text and ship
@@ -251,10 +251,10 @@ var anchorctl []byte
 ```
 
 A file whose build tag is false is never compiled, so its `//go:embed` never runs — a
-linux/amd64 conflux carries the ~50 MB pair it needs and not the ~300 MB in `bin/`.
+linux/amd64 conflux carries the ~50 MB pair it needs and not the ~370 MB in `bin/`.
 
 **Never `//go:embed bin`, and never a glob.** That would pull in all fourteen and
-produce a 300 MB binary per platform. `make dist` gates every artifact between 50 and
+produce a 380 MB binary per platform. `make dist` gates every artifact between 50 and
 75 MiB precisely so that mistake fails the build rather than reaching a release. A real
 pair is 48 to 53 MiB, and conflux adds 8 or 9 of its own, so a real artifact is 56 to
 62 MiB. A real `anchord` beside a placeholder `anchorctl` comes to 45 MiB, which the floor

@@ -269,25 +269,45 @@ func TestARefusedConfigurationIsLeftAsWritten(t *testing.T) {
 	}
 }
 
-// cycling runs one cycle of s in the background, and returns how to end it and wait.
+// cycling runs one cycle of s in the background, and returns how to end it and wait, which
+// hands back what the cycle returned.
 func cycling(t *testing.T, s *Supervisor) (stop func() error) {
 	t.Helper()
 
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
+	var err error
 
-	go func() { done <- s.cycle(ctx) }()
+	end := inBackground(t, "the cycle", func(ctx context.Context) { err = s.cycle(ctx) })
 
 	return func() error {
+		end()
+
+		return err
+	}
+}
+
+// inBackground runs f in the background under a context of its own, and returns how to stop
+// it: that context cancelled, and f waited for, failing the test, saying what, if it has not
+// returned within 15 s.
+func inBackground(t *testing.T, what string, f func(context.Context)) (stop func()) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		f(ctx)
+	}()
+
+	return func() {
+		t.Helper()
 		cancel()
 
 		select {
-		case err := <-done:
-			return err
+		case <-done:
 		case <-time.After(15 * time.Second):
-			t.Fatal("the cycle did not end")
-
-			return nil
+			t.Fatalf("%s did not return once stopped", what)
 		}
 	}
 }

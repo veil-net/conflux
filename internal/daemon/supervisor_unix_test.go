@@ -10,7 +10,6 @@ import (
 	"slices"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
@@ -45,7 +44,7 @@ func TestAStopDuringTheObserversStartIsNoFailure(t *testing.T) {
 			anchorErr, err error
 		)
 
-		stoppedDuringTheObserversStart(t, log, func(ctx context.Context) { id, anchorErr, err = s.up(ctx, cfg) })
+		stoppedDuringTheObserversStart(t, log, "the start", func(ctx context.Context) { id, anchorErr, err = s.up(ctx, cfg) })
 
 		if id != "" || anchorErr != nil || err == nil {
 			t.Errorf("the start, stopped, = %q, %v, %v; want its failure alone, which the stopped cycle drops",
@@ -83,7 +82,7 @@ func TestAStopDuringTheObserversStartIsNoFailure(t *testing.T) {
 
 		var gaveUp bool
 
-		stoppedDuringTheObserversStart(t, log, func(ctx context.Context) {
+		stoppedDuringTheObserversStart(t, log, "the restart", func(ctx context.Context) {
 			gaveUp = s.restartObserver(ctx, cfg, anchorctl.Observer{Note: "not observing: capture ended"}, k)
 		})
 
@@ -102,10 +101,10 @@ func TestAStopDuringTheObserversStartIsNoFailure(t *testing.T) {
 	})
 }
 
-// stoppedDuringTheObserversStart runs bring under a context cancelled once the stand-in
-// anchorctl has begun `observe -start`, which it does not finish while it runs: it blocks
-// writing the manifest it was handed into a FIFO nobody reads. It returns once bring has.
-func stoppedDuringTheObserversStart(t *testing.T, log string, bring func(context.Context)) {
+// stoppedDuringTheObserversStart runs bring, what is being brought up, under a context cancelled
+// once the stand-in anchorctl has begun `observe -start`, which it does not finish while it runs:
+// it blocks writing the manifest it was handed into a FIFO nobody reads. It returns once bring has.
+func stoppedDuringTheObserversStart(t *testing.T, log, what string, bring func(context.Context)) {
 	t.Helper()
 
 	fifo := filepath.Join(t.TempDir(), "observed")
@@ -115,23 +114,8 @@ func stoppedDuringTheObserversStart(t *testing.T, log string, bring func(context
 
 	t.Setenv(fakeAnchorctlObservedEnv, fifo)
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		bring(ctx)
-	}()
+	stop := inBackground(t, what, bring)
 
 	eventually(t, "the observer's start", func() bool { return slices.Contains(ran(t, log), "observe") })
-	cancel()
-
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("it did not return once stopped")
-	}
+	stop()
 }

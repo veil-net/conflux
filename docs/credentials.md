@@ -47,8 +47,12 @@ that is a bad enough outcome to be worth ordering the code around.
 It is also why `conflux uninstall` asks before it runs, and why a machine whose
 `manifest.b64` is gone while `state.json` still names the anchor it was is not enrolled
 again: the supervisor refuses it for good, naming the file, since drawing a new identity
-and address is a person's decision. Put the manifest back, or start over with
-`conflux uninstall`, then install conflux again (uninstall removes it too) and `conflux up`.
+and address is a person's decision. Put the manifest back, or start over: note the
+taints and the API `conflux.json` names, then `conflux uninstall`, which removes conflux
+and that file as well, install conflux again, and enrol as the machine was: `conflux up`
+(or `proxy`, `observe`) with `--taint` for each taint and `--api` for the API (without
+`--taint` a new taint is minted, for a network of its own), or `conflux enrol --manifest
+FILE --api URL` for a credential an issuer granted.
 
 An ephemeral run turns the same fact the other way: it means the identity to be lost, so it
 writes nothing, and the one copy lives in memory for as long as the run. See

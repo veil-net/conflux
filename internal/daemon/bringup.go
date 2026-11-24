@@ -288,11 +288,12 @@ func credential(
 		if st.AnchorID != "" {
 			return nil, nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
 				"the credential is gone, and %s records the anchor it was, %s; enrolling again would draw "+
-					"a new identity and overlay address. Put the manifest back, or start over: conflux uninstall, "+
-					"which removes conflux as well, then install conflux again and run conflux up, proxy or observe "+
-					"with --taint T, T the network's taint, which conflux status names before the uninstall; without it a "+
-					"new taint is minted, for a network of its own",
-				d.StateFile(), st.AnchorID)}
+					"a new identity and overlay address. Put the manifest back, or start over: note the taints and "+
+					"the API %s names, then conflux uninstall, which removes conflux and that file as well, install "+
+					"conflux again, and enrol as this machine was -- conflux up, proxy or observe with --taint for each "+
+					"taint and --api for the API (without --taint a new taint is minted, for a network of its own), "+
+					"or conflux enrol --manifest FILE --api URL for a credential an issuer granted",
+				d.StateFile(), st.AnchorID, d.ConfigFile())}
 		}
 
 		// Never the shared compartment. `up` and `proxy` mint a taint for a machine with

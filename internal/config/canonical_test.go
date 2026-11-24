@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -55,7 +56,7 @@ func TestCanonicalRewritesWhatWasEdited(t *testing.T) {
 		t.Errorf("a configuration conflux wrote was rewritten:\n%s\nwas\n%s", b, saved)
 	}
 
-	// A hand edit: a key conflux does not know, and the mode changed.
+	// A hand edit: a key conflux does not know, and the taints and the proxies changed.
 	edited := `{"version":1,"mode":"proxy","taints":["t"],"proxies":["8080=127.0.0.1:1"],"handEdited":true}`
 	if err := os.WriteFile(d.ConfigFile(), []byte(edited), 0o600); err != nil {
 		t.Fatal(err)
@@ -72,8 +73,8 @@ func TestCanonicalRewritesWhatWasEdited(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Mode != ModeProxy {
-		t.Errorf("the hand edit's mode was not kept: %q", cfg.Mode)
+	if cfg.Mode != ModeProxy || !slices.Equal(cfg.Taints, []string{"t"}) || !slices.Equal(cfg.Proxies, []string{"8080=127.0.0.1:1"}) {
+		t.Errorf("the hand edit did not take effect: mode %q, taints %q, proxies %q", cfg.Mode, cfg.Taints, cfg.Proxies)
 	}
 
 	for path, gone := range map[string]string{d.ConfigFile(): "handEdited", d.StateFile(): "note"} {

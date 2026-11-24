@@ -113,7 +113,7 @@ func TestWhatIsPermanent(t *testing.T) {
 		// anchor's buildOffers, for a subnets.json a Subnets order wrote that it cannot read: the
 		// anchor will not start until the file goes, which no retry does.
 		"a Subnets order's list anchor cannot read": anchorctlSaid("anchorctl: starting: anchor: the subnet list a " +
-			"Subnets order wrote, /var/lib/conflux/anchor/subnets.json: json: unknown field \"x\"; remove the file to " +
+			"Subnets order wrote, /var/lib/.conflux/anchor/subnets.json: json: unknown field \"x\"; remove the file to " +
 			"serve Config.ServeSubnets"),
 		// What a live anchorctl said to `observe -start` against an anchord with no CAP_NET_RAW.
 		"a host that will not let the daemon capture": anchorctlSaid("anchorctl: capture: not permitted: open a packet " +

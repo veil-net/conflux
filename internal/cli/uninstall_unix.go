@@ -114,11 +114,24 @@ func rootFinds(exe string) (found string, ok bool) {
 }
 
 // missed says why root's PATH, which finds found, does not find exe through link, the link to
-// it: another conflux before the link's directory, or, finding none, that directory left out too,
-// where only exe's full path helps.
+// it: another conflux before the link's directory, which removed lets exe be linked by hand
+// (relink), or, where exe's own directory is on that PATH ahead of the link's, lets that PATH
+// find exe with no link at all, a link there never being reached; or, finding none, that
+// directory left out too, where only exe's full path helps. Directories are compared as files
+// (sameFile), never by how they are spelled.
 func missed(found, link, exe string) error {
 	if found == "" {
 		return fmt.Errorf("root's PATH leaves %s out too: type %s by its full path under sudo", filepath.Dir(link), exe)
+	}
+
+	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
+		if sameFile(d, filepath.Dir(link)) {
+			break
+		}
+
+		if sameFile(d, filepath.Dir(exe)) {
+			return fmt.Errorf("root's PATH finds %s before %s: remove it; root's PATH then finds %s", found, filepath.Dir(exe), exe)
+		}
 	}
 
 	return fmt.Errorf("root's PATH finds %s before %s: %s", found, filepath.Dir(link), relink(exe, link))

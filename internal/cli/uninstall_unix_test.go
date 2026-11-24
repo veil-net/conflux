@@ -80,9 +80,11 @@ func TestUninstallTakesTheInstalledConflux(t *testing.T) {
 // conflux after the link's directory. One that finds another before it would do nothing there,
 // so none is left, a link made before included, and the other is named, to be removed before the
 // link is made by hand -- the line that makes it said, not the installer, which would fetch the
-// release and move a dev build off its channel. As install.sh does, it makes none where that PATH
-// finds the installed file, and leaves a file of the link's name that is not that link alone,
-// saying so.
+// release and move a dev build off its channel -- or, where the installed file's directory is on
+// that PATH ahead of the link's, which the link would never be reached behind, to be removed
+// alone, that PATH then finding the installed file. As install.sh does, it makes none where that
+// PATH finds the installed file, and leaves a file of the link's name that is not that link
+// alone, saying so.
 // Each PATH is the test's own directories, the link's among them as /usr/bin is on every root's
 // but where a case leaves it out, so no conflux of the machine's is found.
 func TestAFreshUpdateLinksItForSudo(t *testing.T) {
@@ -99,6 +101,7 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 	const (
 		relink   = "remove it, then link the installed conflux for sudo (sudo ln -s {exe} {link}), or type {exe} by its full path under sudo"
 		shadowed = "root's PATH finds {other} before {dir}: " + relink
+		ahead    = "root's PATH finds {other} before {exedir}: remove it; root's PATH then finds {exe}"
 		leftOut  = "root's PATH leaves {dir} out too: type {exe} by its full path under sudo"
 	)
 
@@ -107,12 +110,14 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 		path   []string // "exe", "other", "link" and "spelt": the directories of each, in this order
 		before string   // at the link's name before the update: "link", an earlier install's, or "file", somebody else's
 		after  string   // and after it: "link", "file" or nothing
-		said   string   // what the update says of it, {exe}, {link} and {other} standing for each and {dir} for the link's directory; "" for nothing
+		said   string   // what the update says of it, {exe}, {link} and {other} standing for each, {dir} for the link's directory and {exedir} for exe's; "" for nothing
 	}{
 		{name: "a PATH that leaves it out", path: []string{"link"}, after: "link", said: "Linked {link} to it"},
 		{name: "a PATH that holds it", path: []string{"exe", "link"}},
 		{name: "a PATH that finds another conflux before the link", path: []string{"other", "link"}, said: shadowed},
-		{name: "a PATH that finds another conflux before it", path: []string{"other", "exe", "link"}, said: shadowed},
+		{name: "a PATH that finds another conflux before it", path: []string{"other", "exe", "link"}, said: ahead},
+		{name: "a PATH that finds another conflux before the link, and it after", path: []string{"other", "link", "exe"}, said: shadowed},
+		{name: "a link made before, behind another conflux before it", path: []string{"other", "exe", "link"}, before: "link", said: ahead},
 		{name: "a PATH that finds another conflux after the link", path: []string{"link", "other"}, after: "link", said: "Linked {link} to it"},
 		{name: "a PATH that finds it through a link made before", path: []string{"link"}, before: "link", after: "link"},
 		{name: "a link made before, behind another conflux", path: []string{"other", "link"}, before: "link", said: shadowed},
@@ -174,7 +179,7 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 			after = "something else"
 		}
 
-		said := strings.NewReplacer("{exe}", exe, "{link}", link, "{other}", other, "{dir}", filepath.Dir(link)).Replace(c.said)
+		said := strings.NewReplacer("{exedir}", filepath.Dir(exe), "{exe}", exe, "{link}", link, "{other}", other, "{dir}", filepath.Dir(link)).Replace(c.said)
 
 		if after != c.after || (said == "" && (errOut != "" || strings.Contains(out, "Linked"))) || !strings.Contains(out+errOut, said) {
 			t.Errorf("%s: %q is at %s, want %q, and the update said:\n%s%s\nwant it to say: %s", c.name, after, link, c.after, out, errOut, said)

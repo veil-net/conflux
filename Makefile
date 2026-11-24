@@ -237,7 +237,9 @@ golden:
 # binaries and the size gate, is dist's.
 #
 # Every target at once, like dist, each one's output held in $(XLOG) and printed in
-# TARGETS order once all have finished, so a failure reads as it would have alone.
+# TARGETS order once all have finished, so a failure reads as it would have alone. vet's
+# exit status is the verdict: non-zero for a finding or a build failure, whose output is
+# then printed whole, and zero whatever else it wrote, such as a module it downloaded.
 XLOG := $(DIST)/.cross
 cross:
 	@rm -rf $(XLOG) && mkdir -p $(XLOG)
@@ -250,8 +252,8 @@ cross:
 	fail=0; \
 	for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; log=$(XLOG)/$$os-$$arch; \
-		if [ "$$(cat $$log.rc)" != 0 ] || grep -qv '^#' $$log; then \
-			grep -v '^#' $$log; echo "  FAIL $$t"; fail=1; \
+		if [ "$$(cat $$log.rc)" != 0 ]; then \
+			cat $$log; echo "  FAIL $$t"; fail=1; \
 		else \
 			echo "  ok   $$t"; \
 		fi; \

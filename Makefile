@@ -145,18 +145,19 @@ build:
 
 # buildcheck holds the conflux `make build` makes for this machine to what ships. The digests
 # stamped into it are the pair's own: a stamp describing other bytes would name the extraction
-# directory for a pair it does not carry, so every line of `version` but the first -- the
-# version and commit, which only make stamps -- must be what `go run`, which stamps nothing and
-# computes them, prints. And it runs in FIPS 140-3 mode: `version` names the module, the
-# module's integrity check passes as it starts (GODEBUG=fips140=debug says so), and with the
-# mode switched off it refuses, exit 70, rather than run without it. Each answer is read whole
-# before it is searched. CI runs it in the linux job and each platforms leg. FreeBSD's build runs
-# only in a VM with no Go, which holds it to the half that needs none, the integrity check and exit
-# 70 (test/service-bsd.sh); OpenBSD's carries no module to hold it to.
+# directory for a pair it does not carry, so `version` from its fips140 line on -- the module and
+# the pair, past the lines only make stamps: the version and commit, and a dev build's channel
+# (CHANNEL=dev) -- must be what `go run`, which stamps nothing and computes the digests, prints.
+# And it runs in FIPS 140-3 mode: `version` names the module, the module's integrity check passes
+# as it starts (GODEBUG=fips140=debug says so), and with the mode switched off it refuses, exit
+# 70, rather than run without it. Each answer is read whole before it is searched. CI runs it in
+# the linux job and each platforms leg. FreeBSD's build runs only in a VM with no Go, which holds
+# it to the half that needs none, the integrity check and exit 70 (test/service-bsd.sh); OpenBSD's
+# carries no module to hold it to.
 buildcheck: build
 	@$(FIPS); set -- $$($(GO) env GOOS GOEXE); exe=$(BIN)/conflux$$2; \
 	if [ "$$(fips $$1)" = off ]; then echo "  FAIL $$1 builds without the module, so there is nothing to check"; exit 1; fi; \
-	stamped=$$("$$exe" version | sed 1d); computed=$$($(GO) run . version | sed 1d); \
+	stamped=$$("$$exe" version | sed -n '/^fips140 /,$$p'); computed=$$($(GO) run . version | sed -n '/^fips140 /,$$p'); \
 	if [ -z "$$stamped" ] || [ "$$stamped" != "$$computed" ]; then \
 		echo "  FAIL the digests stamped into $$exe are not the pair's own"; \
 		printf '%s\n' "  stamped:" "$$stamped" "  computed by go run:" "$$computed"; exit 1; \

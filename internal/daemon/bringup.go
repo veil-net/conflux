@@ -198,6 +198,17 @@ func credential(
 	case err == nil:
 		// Have one.
 	case errors.Is(err, fs.ErrNotExist):
+		// The identity this machine had, gone: the manifest is its only copy, and enrolling
+		// again would draw a new AnchorID and a new overlay address, which every peer that
+		// knew this one would have to learn. Refused for good rather than replaced; drawing
+		// a new identity is a person's decision.
+		if st.AnchorID != "" {
+			return nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
+				"the credential is gone, and %s records the anchor it was, %s; enrolling again would draw "+
+					"a new identity and overlay address. Put the manifest back, or start over with "+
+					"conflux uninstall and then conflux up, proxy or observe", d.StateFile(), st.AnchorID)}
+		}
+
 		// Never the shared compartment. `up` and `proxy` mint a taint for a machine with
 		// none, so this is a conflux.json somebody emptied; no retry changes it.
 		if len(cfg.Taints) == 0 {

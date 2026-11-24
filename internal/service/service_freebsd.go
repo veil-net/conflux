@@ -3,9 +3,7 @@
 package service
 
 import (
-	"errors"
 	"fmt"
-	"os"
 
 	"github.com/veil-net/conflux/internal/paths"
 
@@ -41,18 +39,12 @@ func (freebsd) Install(exe string, args ...string) error {
 	return run("sysrc", rcName+"_enable=YES")
 }
 
-// Remove stops the service, disables it, and deletes the script, saying an rc.conf line or a
-// script it left.
+// Remove stops the service, disables it, and deletes the script once the rc.conf line is gone
+// (rcEnabled.remove), saying a line or a script it left.
 func (f freebsd) Remove() error {
 	_ = run("service", rcName, "onestop")
 
-	errs := []error{freebsdEnabled.remove()}
-
-	if err := os.Remove(scriptPath()); err != nil && !os.IsNotExist(err) {
-		errs = append(errs, err)
-	}
-
-	return errors.Join(errs...)
+	return freebsdEnabled.remove(scriptPath())
 }
 
 // Stop succeeds on a service that is not running, which rc.subr answers "not running?"

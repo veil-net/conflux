@@ -60,14 +60,15 @@ func (openbsd) Install(exe string, args ...string) error {
 	return run("rcctl", "enable", rcName)
 }
 
-// Remove stops and disables the service and deletes the script and the login class, saying an
-// rc.conf.local line or a file it left. Its output went to syslog, which conflux does not own.
+// Remove stops and disables the service, deletes the login class, and the script once the
+// rc.conf.local line is gone (rcEnabled.remove), saying a line or a file it left. Its output went
+// to syslog, which conflux does not own.
 func (openbsd) Remove() error {
 	_ = run("rcctl", "stop", rcName)
 
-	errs := []error{openbsdEnabled.remove()}
+	errs := []error{openbsdEnabled.remove(scriptPath())}
 
-	for _, path := range []string{scriptPath(), classPath, classPath + ".db"} {
+	for _, path := range []string{classPath, classPath + ".db"} {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, err)
 		}

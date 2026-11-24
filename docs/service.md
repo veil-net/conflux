@@ -392,8 +392,9 @@ is killed. It starts after the network and `syslogd` (`REQUIRE: NETWORKING syslo
 nothing it says before the system log is up is lost. `daemon(8)` is not told to restart it: conflux restarts `anchord` itself, and a
 supervisor that exits 78 or 70 would only repeat the answer. `conflux down` on a service
 that is not running succeeds rather than passing on `rc.subr`'s "not running?".
-`uninstall` stops it, removes the `rc.conf` line and the script, and says a line it could not
-remove: asked again after `sysrc -x`, `sysrc -n conflux_enable` must find none.
+`uninstall` stops it, removes the `rc.conf` line and then the script, and says a line it could not
+remove, keeping the script with it: asked again after `sysrc -x`, `sysrc -n conflux_enable` must
+find none.
 
 **OpenBSD.** Script at `/etc/rc.d/conflux`, enabled with `rcctl enable conflux` where
 `rcctl get conflux status` says it is not.
@@ -406,8 +407,11 @@ the supervisor's limit. `login.conf(5)` reads a class in `login.conf.d` before o
 name in `/etc/login.conf`, and `cgetent(3)` reads a `cap_mkdb(1)` database in place of the file
 beside it, so a `conflux.db` there is removed rather than left to stand for the class. Every
 start puts the class back as conflux writes it. `uninstall` stops and disables the service
-and removes the script and the class, and says a line it could not take out of
-`rc.conf.local`: after `rcctl disable`, `rcctl get conflux status` must say it is not enabled.
+and removes the class, and the script once the line is gone, and says a line it could not take
+out of `rc.conf.local`: after `rcctl disable`, `rcctl get conflux status` must say it is not
+enabled. `rcctl get` answers nothing for a service whose script is not there (exit 2, which is
+not taken for a no), so a line left keeps the script, for the next `uninstall` to ask again;
+with no script to ask by, `rcctl disable`'s own answer stands.
 
 Both find the running service again by matching its command line, unquoted — FreeBSD's
 `rc.subr` the first word `ps` prints against `procname`, OpenBSD's `rcctl` the whole of it

@@ -16,7 +16,7 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
-// runRenew fetches a fresh credential now and installs it on the running anchor.
+// runRenew fetches a fresh credential now and installs it on the running anchor and observer.
 //
 // Renewal is otherwise automatic in two places -- once on every start, and on a
 // timer at two thirds of the credential's life -- and neither is reachable by hand.
@@ -28,11 +28,12 @@ import (
 // It does not enrol. A machine with no manifest has nothing to renew, and inventing
 // an identity for it here would silently replace the one a reboot expects.
 func runRenew(ctx context.Context, args []string) int {
-	fs := verbFlags("renew", "conflux renew — install a fresh credential on the running anchor\n\n"+
+	fs := verbFlags("renew", "conflux renew — install a fresh credential on the running anchor and observer\n\n"+
 		"  conflux renew\n\n"+
 		"Renewal is automatic: once at every start, and again on a timer at two thirds\n"+
 		"of the credential's life. This forces one now, which is what a machine whose\n"+
-		"renewals have been failing needs.\n\n"+
+		"renewals have been failing needs. The observer runs under the same credential,\n"+
+		"so a machine that only observes is renewed as one running an anchor is.\n\n"+
 		"The swap is hot. The identity does not change and no session is dropped, so\n"+
 		"this is not a restart and does not need to be treated as one.\n\n")
 
@@ -99,7 +100,7 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 	// the credential as an anchor does -- so "nothing is running" is the likely failure and
 	// deserves conflux's own answer rather than a dial error.
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
-		ui.Errf("nothing is running here, and a credential is installed into a running anchor.\n\n"+
+		ui.Errf("nothing is running here, and a credential is installed into a running anchor or observer.\n\n"+
 			"  conflux start     start from the configuration this machine already has\n\n"+
 			"  The next start renews on its own, so a machine that is meant to be down needs\n"+
 			"  nothing done here.\n\n"+

@@ -278,9 +278,12 @@ func runDown(_ context.Context, args []string) int {
 
 // runUninstall is the reverse of install, and it destroys the identity.
 func runUninstall(_ context.Context, args []string) int {
-	fs := verbFlags("uninstall", "conflux uninstall — remove the boot service, the configuration and the identity\n\n"+
+	fs := verbFlags("uninstall", "conflux uninstall — remove the boot service, the configuration, the identity and conflux itself\n\n"+
 		"  conflux uninstall [--yes]\n\n"+
-		"This deletes the credential, and there is no other copy of it anywhere.\n\n")
+		"Nothing of conflux is left on the machine: conflux itself goes last, from where the\n"+
+		"installer put it, and stays when a step before it fails, so that this can be run\n"+
+		"again to finish. This deletes the credential, and there is no other copy of it\n"+
+		"anywhere.\n\n")
 
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
 

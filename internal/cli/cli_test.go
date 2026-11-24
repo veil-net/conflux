@@ -224,6 +224,47 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 	}
 }
 
+// TestTheUsageSaysWhatACommandReaches: uninstall's summary and usage say it removes conflux
+// itself; renew's usage, and its refusal with nothing running, that it renews an observer as
+// it does an anchor, which is what a machine that only observes runs; and observe's synopsis,
+// which lists every flag it takes, lists --api.
+func TestTheUsageSaysWhatACommandReaches(t *testing.T) {
+	if s := verbs()["uninstall"].summary; !strings.Contains(s, "conflux itself") {
+		t.Errorf("uninstall's summary leaves conflux itself out: %q", s)
+	}
+
+	for verb, want := range map[string]string{
+		"uninstall": "conflux itself",
+		"renew":     "observer",
+		"observe":   "[--api URL]",
+	} {
+		if out, _, _ := capture(t, verb, "-h"); !strings.Contains(out, want) {
+			t.Errorf("conflux %s -h does not say %q:\n%s", verb, want, out)
+		}
+	}
+
+	d := pathstest.Root(t)
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeObserve, Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.SaveManifest(d, config.Envelope("a manifest")); err != nil {
+		t.Fatal(err)
+	}
+
+	var said bytes.Buffer
+
+	was := ui.Errw
+	ui.Errw = &said
+
+	t.Cleanup(func() { ui.Errw = was })
+
+	if code := renewNow(t.Context(), d); code != ExitUnavailable || !strings.Contains(said.String(), "observer") {
+		t.Errorf("renew with nothing running exited %d, saying nothing of the observer:\n%s", code, said.String())
+	}
+}
+
 func TestVersionNamesTheAnchorBuild(t *testing.T) {
 	out, _, code := capture(t, "version")
 	if code != ExitOK {

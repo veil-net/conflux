@@ -156,7 +156,7 @@ type observeFlags struct {
 
 func newObserveFlags() *observeFlags {
 	fs := verbFlags("observe", "conflux observe — inventory the cryptography of this host's traffic, with no anchor\n\n"+
-		"  conflux observe [--taint T] [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]\n\n"+
+		"  conflux observe [--taint T] [--api URL] [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]\n\n"+
 		"Runs the daemon's observer and nothing else. The host copies the start of every flow\n"+
 		"its interfaces carry to it, and it records which services the host reaches, serves\n"+
 		"or passes on, over which protocols, and whether each key exchange is post-quantum,\n"+

@@ -309,7 +309,7 @@ read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 | `conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]` | install a credential this machine was given, instead of drawing one |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
 | `conflux start` | start it again now, from the configuration already on disk |
-| `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |
+| `conflux renew` | fetch a fresh credential and install it on the running anchor and observer, hot |
 | `conflux status` | conflux's state, and `anchorctl status` beneath it |
 | `conflux install` | register the boot service; start it if a configuration exists |
 | `conflux uninstall` | remove everything of conflux's from the machine: the boot service, the configuration, the identity and conflux itself |

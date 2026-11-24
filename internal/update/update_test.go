@@ -179,8 +179,8 @@ func TestAnUpdateIsDownloadedVerifiedAndPutInPlace(t *testing.T) {
 	}
 }
 
-// TestLatestReadsTheTagItIsGiven: a dev build's update reads the pre-release dev-latest, and a
-// release's latest, and neither falls back to the other.
+// TestLatestReadsTheTagItIsGiven: given DevTag, Latest reads the pre-release dev-latest, and given
+// ReleaseTag, latest, and neither falls back to the other.
 func TestLatestReadsTheTagItIsGiven(t *testing.T) {
 	for _, tag := range []string{ReleaseTag, DevTag} {
 		f := &fakeRelease{tag: tag, files: map[string][]byte{"conflux-linux-amd64": newBuild}}

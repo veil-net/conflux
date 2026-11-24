@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -191,6 +192,20 @@ func TestObserveArgvGoldens(t *testing.T) {
 				t.Errorf("argv changed.\n--- want ---\n%s\n--- got ---\n%s", want, got)
 			}
 		})
+	}
+}
+
+// TestTheObserverStartsUnderTheManifestOnStdin: anchor's observer runs only under a
+// credential, and conflux hands it the machine's manifest the one way it hands the anchor's,
+// on stdin: never a path in argv.
+func TestTheObserverStartsUnderTheManifestOnStdin(t *testing.T) {
+	for name, o := range observeScenarios {
+		args := ObserveStartArgs(o)
+
+		i := slices.Index(args, "-manifest")
+		if i < 0 || i+1 == len(args) || args[i+1] != "-" {
+			t.Errorf("%s: %v does not take the manifest from stdin", name, args)
+		}
 	}
 }
 

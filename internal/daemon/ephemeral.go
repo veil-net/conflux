@@ -188,8 +188,15 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		return err
 	}
 
+	// The credential first: the observer runs under it as well as the anchor.
+	if env == nil {
+		if env, m, err = enrolInMemory(ctx, e.Config, e.report()); err != nil {
+			return err
+		}
+	}
+
 	if e.Config.Observer != nil {
-		if err := s.startObserver(ctx, e.Config); err != nil {
+		if _, err := s.startObserver(ctx, e.Config, env); err != nil {
 			return err
 		}
 	}
@@ -197,12 +204,6 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	if x := e.Config.Export; x != nil && x.Enabled {
 		if err := s.ctl.Export(ctx, x.Endpoint, x.Insecure, x.Signals()); err != nil {
 			return fmt.Errorf("pointing the export at %s: %w", x.Endpoint, err)
-		}
-	}
-
-	if env == nil {
-		if env, m, err = enrolInMemory(ctx, e.Config, e.report()); err != nil {
-			return err
 		}
 	}
 

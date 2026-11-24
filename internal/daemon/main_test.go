@@ -35,6 +35,7 @@ const (
 	fakeAnchorctlObserverEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER"
 	fakeAnchorctlCaptureEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_NO_CAPTURE"
 	fakeAnchorctlRenewedEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_RENEWED"
+	fakeAnchorctlObservedEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVED"
 	fakeAnchordEnv           = "CONFLUX_TEST_FAKE_ANCHORD"
 	fakeAnchordListenEnv     = "CONFLUX_TEST_FAKE_ANCHORD_LISTEN"
 )
@@ -130,16 +131,7 @@ func fakeAnchorctl(args []string) int {
 	case "stop":
 		fmt.Println("ok")
 	case "observe":
-		// What anchorctl says of a host that will not let the daemon capture, on stderr.
-		if len(args) > 1 && args[1] == "-start" && os.Getenv(fakeAnchorctlCaptureEnv) != "" {
-			fmt.Fprintln(os.Stderr, "anchorctl: capture: not permitted: open a packet socket: operation not permitted (it needs CAP_NET_RAW)\n"+
-				"  capturing needs CAP_NET_RAW for the daemon on Linux, read access to /dev/bpf* on macOS, "+
-				"Administrators or Performance Log Users on Windows; give the daemon that, then \"anchorctl observe -start\" again")
-
-			return 1
-		}
-
-		fmt.Println("observing with  af_packet")
+		return fakeObserve(args[1:])
 	case "status":
 		switch os.Getenv(fakeAnchorctlStatusEnv) {
 		case "running":
@@ -164,6 +156,62 @@ func fakeAnchorctl(args []string) int {
 
 	return 0
 }
+
+// fakeObserve is anchorctl's observe as conflux uses it: -start under the manifest on stdin,
+// which is the one shape anchorctl's lockdown build takes a credential in, and -stop.
+// fakeAnchorctlObservedEnv, set, names a file what arrived on stdin is written to.
+func fakeObserve(args []string) int {
+	if len(args) == 0 || args[0] != "-start" {
+		fmt.Println("not observing")
+
+		return 0
+	}
+
+	if i := slices.Index(args, "-manifest"); i < 0 || i+1 == len(args) || args[i+1] != "-" {
+		fmt.Fprintln(os.Stderr, "anchorctl: -identity, -root, -cred: the observer runs as an identity its realm admits: "+
+			"it needs one, the realm root it pins and its credential")
+
+		return 2
+	}
+
+	env, err := io.ReadAll(os.Stdin)
+	if err != nil || len(env) == 0 {
+		fmt.Fprintln(os.Stderr, "anchorctl: the manifest on stdin is empty")
+
+		return 1
+	}
+
+	if out := os.Getenv(fakeAnchorctlObservedEnv); out != "" {
+		if err := os.WriteFile(out, env, 0o600); err != nil {
+			return 1
+		}
+	}
+
+	// What anchorctl says of a host that will not let the daemon capture, on stderr.
+	if os.Getenv(fakeAnchorctlCaptureEnv) != "" {
+		fmt.Fprintln(os.Stderr, "anchorctl: capture: not permitted: open a packet socket: operation not permitted (it needs CAP_NET_RAW)\n"+
+			"  capturing needs CAP_NET_RAW for the daemon on Linux, read access to /dev/bpf* on macOS, "+
+			"Administrators or Performance Log Users on Windows; give the daemon that, then \"anchorctl observe -start\" again")
+
+		return 1
+	}
+
+	fmt.Print(fakeObserving)
+
+	return 0
+}
+
+// fakeObserving is what `anchorctl observe -start` printed on a live anchord: the identity in
+// full, which is how a machine that only observes learns the AnchorID it renews by.
+const fakeObserving = `observing with  af_packet
+  since         0s
+  flows         0 held
+  packets       0 taken
+  records       0, in 0 inventory entries
+  as            ` + fakeAnchorID + `
+  realm         4fh2aq7xkd
+  credential    valid until 2027-11-17T00:00:00Z
+`
 
 // fakeAnchorID is the anchor the stand-in anchorctl reports running.
 const fakeAnchorID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"

@@ -189,12 +189,18 @@ func (c *Ctl) Stop(ctx context.Context) error {
 	return err
 }
 
-// ObserveStart starts the daemon's observer, or starts it again with o. A host that will
-// not let the daemon capture is refused, with anchorctl's own explanation on stderr.
-func (c *Ctl) ObserveStart(ctx context.Context, o config.Observer) error {
-	_, err := c.run(ctx, nil, ObserveStartArgs(o)...)
+// ObserveStart starts the daemon's observer under env, the machine's manifest, or starts it
+// again with o, and returns the AnchorID it observes as: the identity its credential names,
+// which a renewal asks for by, and which only the observer reports where no anchor runs. A
+// host that will not let the daemon capture is refused, with anchorctl's own explanation on
+// stderr.
+func (c *Ctl) ObserveStart(ctx context.Context, env config.Envelope, o config.Observer) (string, error) {
+	out, err := c.run(ctx, env, ObserveStartArgs(o)...)
+	if err != nil {
+		return "", err
+	}
 
-	return err
+	return ParseObserving(out), nil
 }
 
 // ObserveStop stops the observer, which records and ends every flow it holds. Not

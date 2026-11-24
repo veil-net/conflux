@@ -268,7 +268,7 @@ func TestAReopenedLinkIsCounted(t *testing.T) {
 	ctl := fakeCtl(t)
 
 	for _, reopened := range []bool{false, true, true} {
-		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, d.RootAnchorDir(), reopened); err != nil {
+		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, d.RootAnchorDir(), reopened, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -295,6 +295,7 @@ func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {
 			t.Setenv(fakeAnchorctlObserverEnv, row)
 
 			s, log := supervised(t, "1")
+			credentialed(t, s.Dirs)
 
 			ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 			defer cancel()
@@ -317,6 +318,7 @@ func TestTheWatcherGivesUpOnAnObserverTheHostRefuses(t *testing.T) {
 	t.Setenv(fakeAnchorctlCaptureEnv, "1")
 
 	s, log := supervised(t, "1")
+	credentialed(t, s.Dirs)
 
 	gaveUp := make(chan bool, 1)
 	go func() {

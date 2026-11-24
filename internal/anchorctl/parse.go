@@ -116,6 +116,18 @@ func ParseStatus(stdout string) Status {
 	return st
 }
 
+// ParseObserving reads the AnchorID `anchorctl observe` names the observer as, in full on
+// its `as` row, or "" where it names none.
+func ParseObserving(stdout string) string {
+	for line := range strings.Lines(stdout) {
+		if f := strings.Fields(line); len(f) == 2 && f[0] == "as" && strings.HasPrefix(f[1], "anchor") {
+			return f[1]
+		}
+	}
+
+	return ""
+}
+
 // anchorID reads the `anchor ID` line both commands print first.
 func anchorID(f []string) (string, bool) {
 	if len(f) == 2 && f[0] == "anchor" && strings.HasPrefix(f[1], "anchor") {

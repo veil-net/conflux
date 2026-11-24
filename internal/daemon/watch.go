@@ -184,12 +184,17 @@ func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k
 	return retrying
 }
 
-// restartObserver starts an observer whose capture ended again, and says whether to give
-// up on it.
+// restartObserver starts an observer whose capture ended again, under the credential on
+// disk -- which a renewal since the cycle began has replaced -- and says whether to give up
+// on it.
 func (s *Supervisor) restartObserver(ctx context.Context, cfg *config.Config, was anchorctl.Observer, k *keeper) bool {
 	s.report().Warn("the observer stopped (%s); starting it again", strings.TrimPrefix(was.Note, "not observing: "))
 
-	err := s.startObserver(ctx, cfg)
+	env, err := config.LoadManifest(s.Dirs)
+	if err == nil {
+		_, err = s.startObserver(ctx, cfg, env)
+	}
+
 	if err == nil {
 		s.report().Step("the observer is back")
 		k.ok()
@@ -349,7 +354,7 @@ func (s *Supervisor) rebuild(ctx context.Context, link bool) error {
 
 	// An ended link's rebuild is counted in the state bringUp writes anyway, where status
 	// reads it: a machine reopening its anchor every few minutes has a failing cable.
-	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link)
+	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link, nil)
 	if err != nil {
 		return err
 	}

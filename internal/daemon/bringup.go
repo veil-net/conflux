@@ -82,18 +82,25 @@ func (nopReporter) Warn(string, ...any) {}
 // from a wrong realm. Refused here, either way, naming the clock.
 const MaxSkew = 10 * time.Minute
 
-// bringUp takes a daemon that is up and answering, and leaves it hosting the anchor
-// this machine is configured for.
+// bringUp takes a daemon that is up and answering, and leaves it running what this machine
+// is configured for: the observer, where observe is given, and the anchor.
 //
 // One function, shared verbatim by `conflux up`, `conflux proxy` and every boot, so
 // that the three cannot drift into starting subtly different anchors. Everything
 // that differs between them is in the config file by the time this runs.
+//
+// The credential comes first, enrolled or renewed as needed, because both run under it: the
+// observer as the identity it names, and the anchor. observe starts the observer under it and
+// returns the AnchorID it observes as. Observing alone, that is all there is, and the ID is
+// what the state records for the next renewal; beside an anchor, an observer that does not
+// start is said, and the anchor starts without it.
 //
 // dir is the anchor directory the daemon's identity was given (see Supervisor.anchorDir).
 // reopened counts the start as an uplink rebuilt, in the same state write as the rest,
 // once it has succeeded.
 func bringUp(
 	ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter, dir string, reopened bool,
+	observe func(config.Envelope) (string, error),
 ) (started anchorctl.Started, err error) {
 	// Against `conflux renew` and the renewal timer, which read and rewrite the same
 	// manifest and state this does.
@@ -132,6 +139,29 @@ func bringUp(
 		return anchorctl.Started{}, err
 	}
 
+	st.BinSetID = ctl.SetID
+
+	if observe != nil {
+		id, err := observe(env)
+
+		switch {
+		case err == nil:
+			if id != "" {
+				st.AnchorID = id
+			}
+
+			st.IssuedAt, st.NotAfter = m.IssuedAt(), m.NotAfter()
+		case !cfg.Anchor():
+			return anchorctl.Started{}, err
+		default:
+			r.Warn("the observer did not start, and the anchor starts without it: %v", err)
+		}
+	}
+
+	if !cfg.Anchor() {
+		return anchorctl.Started{}, nil
+	}
+
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return anchorctl.Started{}, fmt.Errorf("create %s: %w", dir, err)
 	}
@@ -143,7 +173,6 @@ func bringUp(
 
 	st.AnchorID = started.ID
 	st.IssuedAt, st.NotAfter = m.IssuedAt(), m.NotAfter()
-	st.BinSetID = ctl.SetID
 
 	return started, nil
 }

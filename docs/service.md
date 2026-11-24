@@ -25,18 +25,22 @@ extracts the anchor pair if it is not already on disk, writes a fresh bearer tok
 decides what `anchord` runs as — its own account, with exactly the capabilities its mode
 needs, wherever that costs it nothing; see [security.md](security.md#what-anchord-runs-as)
 — makes the account the first time, lays out the directories that identity reaches,
-starts `anchord`, waits until it answers an authenticated `status` call, starts the
-observer where the configuration observes, renews the credential if it is past two thirds of
-its window, and starts the anchor. No prompts, and nothing typed.
+starts `anchord`, waits until it answers an authenticated `status` call, enrols the machine
+if it has no credential yet or renews the one it has if it is past two thirds of its window,
+starts the observer under it where the configuration observes, and starts the anchor. No
+prompts, and nothing typed.
 
-The observer comes first because it needs nothing the anchor does — no credential, no
-enrolment, no realm — and is started on every start because anchord keeps none across one.
-Observing alone, there is no anchor, credential or renewal timer at all, and the observer is
-what readiness waits for. Beside an anchor, an anchor that cannot come up for now — an
-enrolment the API does not answer — leaves the daemon running, and with it the observer and the
-inventory it holds, for the watcher to bring the anchor up when it can. anchord serves the
-observer unasked, so nothing on its command line says whether it observes. See
-[observe.md](observe.md). A start that fails because the decision no longer fits — the first
+The credential comes first because both run under it: anchor's observer runs as the identity
+the credential names, checked as an anchor's start is, and the manifest reaches it on
+anchorctl's stdin, as it reaches the anchor. The observer comes before the anchor, and is
+started on every start because anchord keeps none across one. Observing alone, there is no
+anchor, and the observer is what readiness waits for; the AnchorID the observer reports in full
+is what the credential is renewed by, and the renewal timer runs as it does beside an anchor.
+Beside an anchor, an anchor that cannot come up for now — a start that fails — leaves the daemon
+running, and with it the observer and the inventory it holds, for the watcher to bring the
+anchor up when it can; a credential that cannot be had, an enrolment nobody answers, starts
+neither, and the start is tried again. anchord serves the observer unasked, so nothing on its
+command line says whether it observes. See [observe.md](observe.md). A start that fails because the decision no longer fits — the first
 enrolment named a port below 1024, an uplink's device appeared — starts `anchord` again
 with what it now needs.
 

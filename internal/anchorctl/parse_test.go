@@ -205,3 +205,26 @@ func TestParseMetricIsResilient(t *testing.T) {
 		}
 	}
 }
+
+// TestParseObservingReadsTheIdentity: the AnchorID the observer runs as, from its `as` row as a
+// live anchord printed it, which is where a machine that only observes learns the ID its
+// credential is renewed by; and nothing from output that names none.
+func TestParseObservingReadsTheIdentity(t *testing.T) {
+	const live = `observing with  af_packet
+  since         0s
+  flows         0 held
+  packets       0 taken
+  records       0, in 0 inventory entries
+  as            anchork3v7q7rzt2fwxm4hbe6ndl5tsgcaypuvy3iq7jkob2zr45hxwdmq
+  realm         4fh2aq7xkd
+  credential    valid until 2027-11-17T00:00:00Z
+`
+
+	if got := ParseObserving(live); got != "anchork3v7q7rzt2fwxm4hbe6ndl5tsgcaypuvy3iq7jkob2zr45hxwdmq" {
+		t.Errorf("ParseObserving = %q", got)
+	}
+
+	if got := ParseObserving("not observing\n  packets  0 taken\n"); got != "" {
+		t.Errorf("ParseObserving of an observer naming no identity = %q, want none", got)
+	}
+}

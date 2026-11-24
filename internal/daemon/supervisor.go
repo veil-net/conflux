@@ -302,33 +302,18 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		return err
 	}
 
-	// The observer before the anchor, because it needs nothing the anchor does -- no
-	// credential, no enrolment, no realm -- and an anchor that cannot come up must not keep
-	// it from observing. Observing alone, a refusal is the cycle's: there is nothing else
-	// to run. Beside an anchor it is said, and the anchor starts without it.
-	if cfg.Observer != nil {
-		if err := s.startObserver(ctx, cfg); err != nil {
-			if !cfg.Anchor() {
-				return err
-			}
-
-			s.report().Warn("the observer did not start, and the anchor starts without it: %v", err)
-		}
+	ready, err := s.up(ctx, cfg)
+	if err != nil {
+		return err
 	}
 
-	if cfg.Anchor() {
-		ready, err := s.anchorUp(ctx, cfg)
-		if err != nil {
-			return err
-		}
-
-		if ready != "" {
-			s.signalReady(ready)
-		} else {
-			s.signalStarted()
-		}
-	} else {
+	switch {
+	case !cfg.Anchor():
 		s.signalReady("observer")
+	case ready != "":
+		s.signalReady(ready)
+	default:
+		s.signalStarted()
 	}
 
 	// The timer, and the watcher that keeps an anchor in the daemon -- and on a link,
@@ -346,9 +331,8 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		wg.Wait()
 	}()
 
-	if cfg.Anchor() {
-		wg.Go(func() { s.renewLoop(loops) })
-	}
+	// Beside an anchor and observing alone alike: both run under the credential.
+	wg.Go(func() { s.renewLoop(loops) })
 
 	wg.Go(func() {
 		if s.watch(loops, cfg, checkInterval(cfg)) {
@@ -366,14 +350,16 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	}
 }
 
-// anchorUp brings the configured anchor up in the daemon, and says what readiness to
-// record: the anchor's ID, or nothing yet.
+// up brings up in the daemon what the configuration runs -- the observer, then the anchor,
+// both under the machine's credential -- and says what readiness to record: the anchor's ID,
+// or nothing yet.
 //
-// An anchor that cannot come up for now -- an enrolment the API does not answer, say -- ends
-// the cycle, unless the observer runs beside it: then the daemon is kept, and with it the
-// observer and the inventory it holds, and the watcher brings the anchor up when it can, as it
-// rebuilds one that is lost. A refusal for good ends the cycle either way.
-func (s *Supervisor) anchorUp(ctx context.Context, cfg *config.Config) (string, error) {
+// An anchor that cannot come up for now -- a start that fails, say -- ends the cycle, unless
+// the observer runs beside it: then the daemon is kept, and with it the observer and the
+// inventory it holds, and the watcher brings the anchor up when it can, as it rebuilds one
+// that is lost. A refusal for good ends the cycle either way, and so does a credential that
+// could not be had: the observer runs under it too.
+func (s *Supervisor) up(ctx context.Context, cfg *config.Config) (string, error) {
 	// Windows needs the driver beside anchord before an interface can exist, and it
 	// lives in the content-addressed set directory: an upgraded conflux extracts a new
 	// set with no wintun.dll in it, and a boot must not need somebody to run `up`.
@@ -383,11 +369,27 @@ func (s *Supervisor) anchorUp(ctx context.Context, cfg *config.Config) (string, 
 		}
 	}
 
-	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false)
+	var (
+		observe   func(config.Envelope) (string, error)
+		observing bool
+	)
+
+	if cfg.Observer != nil {
+		observe = func(env config.Envelope) (string, error) {
+			id, err := s.startObserver(ctx, cfg, env)
+			observing = err == nil
+
+			return id, err
+		}
+	}
+
+	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false, observe)
 
 	switch {
 	case err == nil:
-		s.report().Step("anchor %s is up", started.ID)
+		if cfg.Anchor() {
+			s.report().Step("anchor %s is up", started.ID)
+		}
 
 		return started.ID, nil
 	case s.redecided():
@@ -395,7 +397,7 @@ func (s *Supervisor) anchorUp(ctx context.Context, cfg *config.Config) (string, 
 		// root may bind -- is one the next cycle makes with what it needs. Not wrapped, so a
 		// refusal for good does not count against the configuration.
 		return "", fmt.Errorf("%w: %v", errRespawn, err)
-	case cfg.Observer != nil && !Permanent(err):
+	case observing && cfg.Anchor() && !Permanent(err):
 		s.report().Warn("the anchor did not come up, and the observer goes on without it until it does: %v", err)
 
 		return "", nil
@@ -404,14 +406,16 @@ func (s *Supervisor) anchorUp(ctx context.Context, cfg *config.Config) (string, 
 	}
 }
 
-// startObserver starts the daemon's observer with what conflux.json asks of it. anchord
-// keeps no observer across a restart, so every daemon is asked afresh.
-func (s *Supervisor) startObserver(ctx context.Context, cfg *config.Config) error {
+// startObserver starts the daemon's observer with what conflux.json asks of it, under env,
+// and returns the AnchorID it observes as. anchord keeps no observer across a restart, so
+// every daemon is asked afresh.
+func (s *Supervisor) startObserver(ctx context.Context, cfg *config.Config, env config.Envelope) (string, error) {
 	start, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
-	if err := s.ctl.ObserveStart(start, *cfg.Observer); err != nil {
-		return fmt.Errorf("starting the observer: %w", err)
+	id, err := s.ctl.ObserveStart(start, env, *cfg.Observer)
+	if err != nil {
+		return "", fmt.Errorf("starting the observer: %w", err)
 	}
 
 	where := "kept in the daemon's inventory"
@@ -421,7 +425,7 @@ func (s *Supervisor) startObserver(ctx context.Context, cfg *config.Config) erro
 
 	s.report().Step("observing; the records are %s", where)
 
-	return nil
+	return id, nil
 }
 
 // anchordArgs is everything anchord is started with.

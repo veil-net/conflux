@@ -425,9 +425,10 @@ Needs root.
 
 Removes everything conflux put on the machine, and leaves no trace of it:
 
-- the boot service and its definition — systemd's unit with any drop-in, the launchd plist,
-  the rc script and its `rc.conf` line (`rc.conf.local`'s on OpenBSD, with the login class
-  `/etc/login.conf.d/conflux`), or the SCM's entry and the event source;
+- the boot service and its definition — systemd's unit and the unit's four drop-in directories
+  in `/etc` and `/run`, the launchd plist, the rc script and its `rc.conf` line
+  (`rc.conf.local`'s on OpenBSD, with the login class `/etc/login.conf.d/conflux`), or the
+  SCM's entry and the event source;
 - the whole root — the configuration, the identity and everything else conflux keeps;
 - the root a killed ephemeral run of the account running `uninstall` left (root's, under the
   system's runtime directory, or on Windows that Administrator's, in their `%TEMP%`), and the
@@ -635,7 +636,7 @@ other refusal — passes through untouched.
 |---|---|
 | 0 | success |
 | 1 | failure |
-| 2 | usage: a flag or an argument the command does not take, or one it cannot do without (`enrol`'s `--manifest`), said on stderr with the command's usage beneath it. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
+| 2 | usage: a flag that does not parse, a command given too few or too many arguments where it counts them (`cert`'s commands, and `enrol`, which takes `--manifest` and nothing else), and `cert`, `cert ca` or `cert p12` given no command, said on stderr with the usage, or the list, beneath it. And a refusal of what was typed, said on stderr in a line of its own: an option conflux does not have, a `cert` command that does not exist, anchorctl's `stop` or `restart`, a flag `start`, `renew`, `observe` or `proxy` does not have (anchorctl has commands of those names, and the line says how to reach them), an argument `start`, `renew`, `update` or `observe` does not take, `proxy` with nothing to serve, `observe` where there is no capture, `uninstall` beside a live ephemeral run, or what asks to be confirmed — `uninstall`, `observe` in an anchor's place — and was not. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
 | 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
 | 13 | needs root or Administrator, or a `status` that cannot read the configuration, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |

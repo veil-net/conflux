@@ -320,8 +320,9 @@ const maxManifest = 1 << 20
 // host, refused now naming both rather than at the first renewal months later.
 //
 // A fixed-term credential names no renewal URL, so there is nothing to read a base out
-// of and nothing to check --api against: the flag is taken as given, and empty leaves
-// the configuration's API as it was. Nothing asks it for this credential anyway.
+// of and no host to check --api against: the flag is held to config.CheckAPIURL alone, as
+// below, and empty leaves the configuration's API as it was. Nothing asks it for this
+// credential anyway.
 //
 // Either way the API installed, and the renewal URL, are held to config.CheckAPIURL, as
 // every start and renewal holds them: one they refuse is refused here, while a person is

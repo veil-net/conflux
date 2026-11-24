@@ -101,8 +101,9 @@ func PlaceFrom(d paths.Dirs, src string) (string, error) {
 	return dst, nil
 }
 
-// Executable is the file this process runs, symlinks followed: the file a copy is made of,
-// and the one uninstall on Windows asks whether it is the installed conflux.
+// Executable is the file this process runs, symlinks followed: the file a copy is made of; the
+// one update asks whether the installed conflux is; and the one uninstall on Windows asks
+// whether the directory it removes holds.
 func Executable() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {

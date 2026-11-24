@@ -6,7 +6,7 @@
 // running anchord has open, so there is no ETXTBSY on Unix and no sharing violation
 // on Windows. Two conflux processes racing produce the same path. A stale set is
 // identifiable and sweepable. And "is it already extracted" is three stats rather
-// than a read of forty megabytes on every invocation: setID is stamped at build time
+// than a read of fifty-odd megabytes on every invocation: setID is stamped at build time
 // (anchor.Digests).
 //
 // It is emphatically not os.TempDir(), which fails four ways for a service: systemd's
@@ -145,10 +145,10 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // otherwise one in memory, where the platform runs one from there (AnchorctlInMemory); and
 // otherwise a copy in a private temporary directory, which done removes, and which is the
 // account's that asked -- on Windows SYSTEM's and the Administrators' alone, as the extracted
-// pair is, would not run for a user who is not elevated. Never d's own
-// directories. Making them for help remade, after an uninstall, what it had removed, with 45 MB
-// of binaries in it; and on Windows, asked by an account that is not an administrator, it
-// left %ProgramData%\conflux owned by that account, which every later install then refused.
+// pair is, would not run for a user who is not elevated. Never d's own directories. Making
+// them for help remade, after an uninstall, what it had removed, with 50-odd MB of binaries
+// in it; and on Windows, asked by an account that is not an administrator, it left
+// %ProgramData%\conflux owned by that account, which every later install then refused.
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	if t, err := Extracted(d); err == nil {
 		return t.Anchorctl, func() {}, nil

@@ -68,7 +68,7 @@ LDFLAGS := -s -w \
 
 # STAMP defines `stamp os-arch[.exe]`, which prints the -X flags that hand a build the
 # SHA-256s of the two files that target's //go:embed names, so a released conflux
-# never reads forty-odd megabytes to learn which pair it carries (anchor/anchor.go,
+# never reads fifty-odd megabytes to learn which pair it carries (anchor/anchor.go,
 # Digests). Hashed in the recipe that links them, from the same paths, so a stamp
 # cannot describe other bytes than the ones embedded; a plain `go build` stamps nothing
 # and computes them instead. sha256sum, or shasum on macOS.

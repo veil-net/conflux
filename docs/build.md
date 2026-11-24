@@ -318,6 +318,7 @@ parameters. Why v1.26.0 and not the certified v1.0.0, and what may be claimed, i
 | | |
 |---|---|
 | `make build` | this machine |
+| `make buildcheck` | `make build`, then hold it to what ships: its stamped digests must be the pair's own, and it must run in FIPS 140-3 mode, its integrity check verified, and exit 70 with the mode off; refused on OpenBSD, whose build has no module |
 | `make test` / `make race` | the tests, under `GODEBUG=fips140=only` (`FIPSTEST=` without) |
 | `make cross` | vet all seven, test files included |
 | `make dist` | build all seven into `dist/`, with `SHA256SUMS` and the size gate |
@@ -331,7 +332,7 @@ parameters. Why v1.26.0 and not the certified v1.0.0, and what may be claimed, i
 ## Version stamping
 
 ```console
-$ make build VERSION=v0.2.0
+$ make build VERSION=0.2.0
 ```
 
 `VERSION` defaults to the contents of the `VERSION` file, and `COMMIT` to `git rev-parse`.

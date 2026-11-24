@@ -25,7 +25,7 @@ const verifiedMarker = ".verified"
 // returns holds exactly this build's bytes. A binary changed on disk since -- by hand, or by
 // anything else -- is found by its digest and the set extracted again. A set whose files are
 // as they were when last held to the digests is found so by a stat of each, so a start reads
-// forty-odd megabytes only when something touched them.
+// fifty-odd megabytes only when something touched them.
 //
 // The CLI keeps Ensure's three stats: what it runs is anchorctl, as the caller, and status
 // and pass-through are paid for on every invocation.

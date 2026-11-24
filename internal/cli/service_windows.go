@@ -3,9 +3,7 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"strings"
 	"sync"
 	"time"
 
@@ -39,7 +37,7 @@ func serveAsService(sup *daemon.Supervisor) (bool, int) {
 	if l, err := eventlog.Open(service.ServiceName); err == nil {
 		defer l.Close()
 
-		ui.Out, ui.Errw = &eventWriter{log: l}, &eventWriter{log: l, warn: true}
+		ui.Out, ui.Errw = newEventWriter(l.Info), newEventWriter(l.Warning)
 	}
 
 	h := &handler{sup: sup, setup: setup}
@@ -144,40 +142,28 @@ func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.S
 // the system's, and the service SID it is given goes with the service.
 func removeAccount() error { return nil }
 
-// eventWriter writes each line given it to the event log as one event: an information, or a
-// warning for what conflux says on its error stream.
+// eventWriter writes each line given it to the event log as one event, through write: an
+// information, or a warning for what conflux says on its error stream. Its lines are split as
+// anchord's are (daemon.LineWriter), and an empty one is no event. Locked, since whichever
+// goroutine is speaking writes to it.
 type eventWriter struct {
-	log  *eventlog.Log
-	warn bool
+	mu    sync.Mutex
+	lines daemon.LineWriter
+}
 
-	mu  sync.Mutex
-	buf []byte
+func newEventWriter(write func(eid uint32, msg string) error) *eventWriter {
+	return &eventWriter{lines: daemon.LineWriter{Emit: func(line string) {
+		if line != "" {
+			_ = write(eventID, line)
+		}
+	}}}
 }
 
 func (w *eventWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	w.buf = append(w.buf, p...)
-
-	for {
-		i := bytes.IndexByte(w.buf, '\n')
-		if i < 0 {
-			break
-		}
-
-		if line := strings.TrimRight(string(w.buf[:i]), "\r"); line != "" {
-			if w.warn {
-				_ = w.log.Warning(eventID, line)
-			} else {
-				_ = w.log.Info(eventID, line)
-			}
-		}
-
-		w.buf = w.buf[i+1:]
-	}
-
-	return len(p), nil
+	return w.lines.Write(p)
 }
 
 // eventID is the one event conflux writes: EventCreate.exe's message file, which the source

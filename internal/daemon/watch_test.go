@@ -245,7 +245,7 @@ func TestTheTailHoldsTheLastWords(t *testing.T) {
 func TestLineWriter(t *testing.T) {
 	var got []string
 
-	w := &lineWriter{emit: func(l string) { got = append(got, l) }}
+	w := &LineWriter{Emit: func(l string) { got = append(got, l) }}
 
 	for _, chunk := range []string{"one\ntw", "o\r\nthr", "ee"} {
 		if _, err := w.Write([]byte(chunk)); err != nil {
@@ -253,7 +253,7 @@ func TestLineWriter(t *testing.T) {
 		}
 	}
 
-	w.flush()
+	w.Flush()
 
 	if want := []string{"one", "two", "three"}; !slices.Equal(got, want) {
 		t.Errorf("lines = %q, want %q", got, want)

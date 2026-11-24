@@ -645,7 +645,7 @@ func (s *Supervisor) exec(p Privilege, args []string, observing bool) (*child, e
 	// by the time anybody reads it.
 	go func() {
 		c.err = cmd.Wait()
-		out.flush()
+		out.Flush()
 		close(c.exited)
 	}()
 
@@ -654,17 +654,19 @@ func (s *Supervisor) exec(p Privilege, args []string, observing bool) (*child, e
 
 // lines is a writer for anchord's output, delivering it a line at a time to the tail
 // and the reporter.
-func (s *Supervisor) lines() *lineWriter {
-	return &lineWriter{emit: func(line string) {
+func (s *Supervisor) lines() *LineWriter {
+	return &LineWriter{Emit: func(line string) {
 		s.tail.add(line)
 		s.report().Step("anchord: %s", line)
 	}}
 }
 
-// lineWriter splits what is written to it into lines. os/exec copies a writer named for
-// both streams from one goroutine, so it is only ever written from one at a time.
-type lineWriter struct {
-	emit func(string)
+// LineWriter splits what is written to it into lines, and hands each to Emit without its line
+// end. It takes no lock: anchord's is named for both its streams, which os/exec copies from one
+// goroutine, so it is only ever written from one at a time. A writer that several goroutines
+// share -- the Windows service's event log, which stands in for its output -- holds its own.
+type LineWriter struct {
+	Emit func(string)
 	buf  []byte
 }
 
@@ -672,7 +674,7 @@ type lineWriter struct {
 // out rather than held.
 const maxLine = 64 << 10
 
-func (w *lineWriter) Write(p []byte) (int, error) {
+func (w *LineWriter) Write(p []byte) (int, error) {
 	w.buf = append(w.buf, p...)
 
 	start := 0
@@ -683,7 +685,7 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 			break
 		}
 
-		w.emit(string(bytes.TrimRight(w.buf[start:start+i], "\r")))
+		w.Emit(string(bytes.TrimRight(w.buf[start:start+i], "\r")))
 		start += i + 1
 	}
 
@@ -692,16 +694,16 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 	w.buf = w.buf[:copy(w.buf, w.buf[start:])]
 
 	if len(w.buf) >= maxLine {
-		w.flush()
+		w.Flush()
 	}
 
 	return len(p), nil
 }
 
-// flush emits whatever is left of a line that ended without a newline.
-func (w *lineWriter) flush() {
+// Flush emits whatever is left of a line that ended without a newline.
+func (w *LineWriter) Flush() {
 	if len(w.buf) > 0 {
-		w.emit(string(w.buf))
+		w.Emit(string(w.buf))
 	}
 
 	w.buf = w.buf[:0]

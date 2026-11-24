@@ -5,13 +5,13 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 )
 
 // TestWriteFileIfChangedTakesBackAnotherAccountsFile: a file holding what conflux writes, at its
 // mode, that another account owns -- and so can make writable, or write, whenever it likes --
-// is written again, a file of conflux's own, rather than left as it is.
+// is written again, a new file of the writer's own, rather than left as it is. Another account
+// is the writer seen as somebody else (euid), so this runs as root or not, as the gates need.
 func TestWriteFileIfChangedTakesBackAnotherAccountsFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "conflux.service")
 
@@ -19,18 +19,21 @@ func TestWriteFileIfChangedTakesBackAnotherAccountsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	other := os.Geteuid() + 1
-	if err := os.Chown(path, other, -1); err != nil {
-		t.Skipf("giving a file to another account needs root: %v", err)
-	}
-
 	before, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	if wrote, err := WriteFileIfChanged(path, []byte("unit"), 0o644); err != nil || wrote {
+		t.Fatalf("WriteFileIfChanged over its own file's same bytes = %v, %v; want it kept", wrote, err)
+	}
+
+	was := euid
+	euid = func() int { return os.Geteuid() + 1 }
+	t.Cleanup(func() { euid = was })
+
 	if wrote, err := WriteFileIfChanged(path, []byte("unit"), 0o644); err != nil || !wrote {
-		t.Errorf("WriteFileIfChanged over the same bytes, owned by uid %d = %v, %v; want it written", other, wrote, err)
+		t.Errorf("WriteFileIfChanged over the same bytes another account owns = %v, %v; want it written", wrote, err)
 	}
 
 	after, err := os.Stat(path)
@@ -38,9 +41,8 @@ func TestWriteFileIfChangedTakesBackAnotherAccountsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if uid := after.Sys().(*syscall.Stat_t).Uid; int(uid) != os.Geteuid() || os.SameFile(before, after) {
-		t.Errorf("after the start the file is uid %d's, the same file %v; want a new file, uid %d's",
-			uid, os.SameFile(before, after), os.Geteuid())
+	if os.SameFile(before, after) {
+		t.Error("another account's file was kept, not written again as a new file")
 	}
 
 	if got := after.Mode().Perm(); got != 0o644 {

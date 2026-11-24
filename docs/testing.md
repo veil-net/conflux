@@ -427,9 +427,8 @@ works), IPv6 — before anything is built, because each of those otherwise fails
 later and names something else. The runner may be root, so
 `TestWriteFileAtomicPreservesOnFailure` probes whether making a directory read-only took
 rather than assuming it did, and the privilege refusal's test stubs the check rather
-than skipping. `TestWriteFileIfChangedTakesBackAnotherAccountsFile` needs root to give a file
-to another account, so it runs where the runner is root, as `linux`'s is, and skips where it is
-not: the macOS and Linux arm64 legs, which take a skip.
+than skipping, as `TestWriteFileIfChangedTakesBackAnotherAccountsFile` makes the writer see
+itself as another account rather than needing root to give a file away.
 
 ## The genesis node
 

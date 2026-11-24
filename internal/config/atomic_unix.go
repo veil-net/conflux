@@ -9,6 +9,10 @@ import (
 	"syscall"
 )
 
+// euid is the account conflux writes as: os.Geteuid, a variable only so a test that cannot give a
+// file to another account can make its own file look like one.
+var euid = os.Geteuid
+
 // keep reports whether f, which holds what conflux writes, can stay as it is: only a file of
 // the writer's own, since another account owning it can make it writable or write it whenever
 // it likes. One of ours is given perm back where its mode is another, through the descriptor
@@ -19,7 +23,7 @@ func keep(f *os.File, path string, perm fs.FileMode) (bool, error) {
 		return false, nil
 	}
 
-	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || int(st.Uid) != os.Geteuid() {
+	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || int(st.Uid) != euid() {
 		return false, nil
 	}
 

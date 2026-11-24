@@ -122,16 +122,20 @@ link() {
   found=$(rootpath) || return 0
   [ "$found" = "$exe" ] && return 0
 
+  # Why root's PATH does not find $exe: it leaves $dir out, or it finds another conflux first.
+  why="root's PATH leaves $dir out"
+  [ -n "$found" ] && why="root's PATH finds $found first"
+
   if [ -e "$sudolink" ] || [ -L "$sudolink" ]; then
     [ "$(readlink "$sudolink" 2>/dev/null)" = "$exe" ] && return 0
-    say "" "$sudolink is not conflux's, so root's PATH, which leaves $dir out, finds that one first."
+    say "" "$sudolink is not conflux's, and $why, so sudo conflux runs that one."
     return 0
   fi
 
   if asroot ln -s "$exe" "$sudolink" 2>/dev/null; then
-    say "Linked $sudolink to it, since root's PATH leaves $dir out."
+    say "Linked $sudolink to it, since $why."
   else
-    say "" "Root's PATH leaves $dir out, so type $exe by its full path under sudo."
+    say "" "Since $why, type $exe by its full path under sudo."
   fi
 }
 

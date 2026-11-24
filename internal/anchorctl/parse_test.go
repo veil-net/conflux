@@ -1,7 +1,9 @@
 package anchorctl
 
 import (
+	"slices"
 	"testing"
+	"time"
 )
 
 // The fixtures below are the exact shapes anchorctl prints: printStarted and the
@@ -81,6 +83,33 @@ const tunObservingOutput = `04:16:16  reachability=unknown  mtu=65510  peers=0  
 func TestParseStatusNotRunning(t *testing.T) {
 	if st := ParseStatus(notRunningOutput); st.Running || st.ID != "" {
 		t.Errorf("ParseStatus(%q) = %+v, want nothing running", notRunningOutput, st)
+	}
+}
+
+// TestParseStatusReadsTheAnchor: what status says of a running anchor -- its ID, its overlay
+// address, when its credential stops working, and the interface a TUN anchor holds, which a
+// userspace one has none of -- read off the rows as anchor pads them.
+func TestParseStatusReadsTheAnchor(t *testing.T) {
+	st := ParseStatus(statusOutput)
+
+	if !st.Running || st.ID != wantID {
+		t.Errorf("ParseStatus(statusOutput) = running %v, ID %q; want running, %q", st.Running, st.ID, wantID)
+	}
+
+	if want := []string{"fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48"}; !slices.Equal(st.Overlay, want) {
+		t.Errorf("ParseStatus(statusOutput).Overlay = %q, want %q", st.Overlay, want)
+	}
+
+	if want := time.Date(2026, 10, 4, 10, 40, 39, 0, time.UTC); !st.WorksUntil.Equal(want) {
+		t.Errorf("ParseStatus(statusOutput).WorksUntil = %v, want %v", st.WorksUntil, want)
+	}
+
+	if st.Interface != "" {
+		t.Errorf("ParseStatus(statusOutput).Interface = %q, want none in userspace", st.Interface)
+	}
+
+	if got := ParseStatus(tunObservingOutput).Interface; got != "anchorqsgwfbu4s" {
+		t.Errorf("ParseStatus(tunObservingOutput).Interface = %q, want anchorqsgwfbu4s", got)
 	}
 }
 

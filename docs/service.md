@@ -55,7 +55,8 @@ rebuild's (below); a credential that cannot be had, an
 enrolment nobody answers, starts neither, and the start is tried again. anchord serves the observer unasked, so nothing on its
 command line says whether it observes. See [observe.md](observe.md). A start that fails because the decision no longer fits — the first
 enrolment named a port below 1024, an uplink's device appeared — starts `anchord` again
-with what it now needs.
+with what it now needs. A start or a rebuild that the service's stop cuts short has not failed:
+nothing is said of it, and the decision is not made again.
 
 Readiness is a real probe and not a sleep. A socket file on disk proves nothing —
 a crashed daemon leaves one behind — so the supervisor polls until `anchorctl status`

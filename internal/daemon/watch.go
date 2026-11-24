@@ -174,6 +174,13 @@ func (s *Supervisor) rebuildAnchor(ctx context.Context, cfg *config.Config, why 
 		return kept
 	}
 
+	// A rebuild cut short by the watcher's end -- the service stopping, or the cycle ending
+	// under it -- is no failure of it: nothing is said or counted, and the decision is not
+	// asked again. The watcher returns at its next look at ctx.
+	if ctx.Err() != nil {
+		return retrying
+	}
+
 	// A rebuild the decision no longer fits -- an uplink's device that has appeared with a
 	// group anchord was not given -- is the cycle's to start again.
 	if s.redecided() {

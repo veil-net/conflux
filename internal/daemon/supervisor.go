@@ -433,6 +433,10 @@ func (s *Supervisor) up(ctx context.Context, cfg *config.Config) (id string, anc
 		}
 
 		return started.ID, nil, nil
+	case ctx.Err() != nil:
+		// A start the stop ended is no failure of it, and the cycle is ending: nothing is said,
+		// and the decision is not asked again for a next cycle there will not be.
+		return "", nil, err
 	case s.redecided():
 		// A start the decision no longer fits -- the first enrolment named a port only
 		// root may bind -- is one the next cycle makes with what it needs. Not wrapped, so a

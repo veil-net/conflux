@@ -767,6 +767,45 @@ func TestAStopOnTheWayToTheLockGoesNoFurther(t *testing.T) {
 	}
 }
 
+// TestAStopThatEndsABringUpIsNoFailure: a start, or the watcher's rebuild, that a stop ends is no
+// failure of it. The start hands the stop back, and the rebuild warns of nothing past the lost
+// anchor that began it. Neither asks whether anchord would now be started otherwise (redecided:
+// conflux.json and the manifest read again, and on Linux firewall-cmd and iptables forked under
+// timeouts the stop does not reach) for a cycle that is ending anyway: the decision here is not
+// the one anchord was started from, so a redecided asked would end the cycle to start it again.
+func TestAStopThatEndsABringUpIsNoFailure(t *testing.T) {
+	s, _ := supervised(t, "1")
+	s.decided = Privilege{Account: true}
+	s.respawn = make(chan struct{}, 1)
+
+	w := &warnings{}
+	s.Reporter = w
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if id, anchorErr, err := s.up(ctx, cfg); id != "" || anchorErr != nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("the start, stopped, = %q, %v, %v; want the stop alone", id, anchorErr, err)
+	}
+
+	why := "anchord holds no anchor any more"
+	if got := s.rebuildAnchor(ctx, cfg, why, false, newKeeper()); got != retrying {
+		t.Errorf("the rebuild, stopped, came to %v, want retrying (%v), which the watcher's stop ends", got, retrying)
+	}
+
+	if want := []string{why + "; rebuilding the anchor"}; !slices.Equal(w.said, want) {
+		t.Errorf("warned %q, want %q alone", w.said, want)
+	}
+
+	select {
+	case <-s.respawn:
+		t.Error("a stop asked for anchord to be started again")
+	default:
+	}
+}
+
 // TestNoCredentialNoObserver: the observer runs under the machine's credential, so beside an
 // anchor whose enrolment nobody answers neither starts, and the cycle ends to be tried again.
 func TestNoCredentialNoObserver(t *testing.T) {

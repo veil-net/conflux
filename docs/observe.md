@@ -112,9 +112,11 @@ Naming the observer says what it is now, as anchorctl's `observe -start` does: `
 either option, which implies it — `--observe-loopback`, `--observe-hide-names` — and an option
 not given is off. Naming nothing keeps what is configured, and `--no-observe` turns it off.
 
-The observer starts before the anchor, and needs nothing the anchor does, so an anchor that
-cannot come up — an enrolment the API does not answer — leaves the observer and its inventory
-running while the anchor is tried again.
+The observer runs under the machine's credential, as the anchor does, so it starts once the
+credential is had and before the anchor: an anchor whose start fails leaves the observer and
+its inventory running while the anchor is tried again, and a credential that cannot be had — an
+enrolment the API does not answer — starts neither, and the start is tried again. See
+[service.md](service.md).
 
 ## Switching
 

@@ -55,3 +55,21 @@ func withoutDir(path, dir string) string {
 
 	return strings.Join(kept, ";")
 }
+
+// withDir is a PATH, as Windows writes it, with dir added at its end where no entry names it
+// already, compared as withoutDir compares them: what install.ps1 writes.
+func withDir(path, dir string) string {
+	want := strings.TrimRight(dir, `\`)
+
+	for e := range strings.SplitSeq(path, ";") {
+		if strings.EqualFold(strings.TrimRight(e, `\`), want) {
+			return path
+		}
+	}
+
+	if path = strings.TrimRight(path, ";"); path == "" {
+		return dir
+	}
+
+	return path + ";" + dir
+}

@@ -71,9 +71,22 @@ func cmdExe() (string, error) {
 	return filepath.Join(sys, "cmd.exe"), nil
 }
 
-// removePathEntry takes dir out of the machine's PATH, read unexpanded and written back as
-// its own kind, as install.ps1 wrote it, and tells every window the environment changed.
+// addPathEntry puts dir on the machine's PATH, as install.ps1 does, for a conflux an update
+// installed where there was none.
+func addPathEntry(dir string) error {
+	return editMachinePath(func(path string) string { return withDir(path, dir) })
+}
+
+// removePathEntry takes dir out of the machine's PATH, as install.ps1 put it there.
 func removePathEntry(dir string) error {
+	return editMachinePath(func(path string) string { return withoutDir(path, dir) })
+}
+
+// editMachinePath rewrites the machine's PATH through edit: read unexpanded and written back
+// as its own kind, as install.ps1 writes it, since a value expanded on the way through would
+// lose every %SystemRoot% in it; and, where edit changed it, tells every window the
+// environment changed.
+func editMachinePath(edit func(path string) string) error {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE,
 		`SYSTEM\CurrentControlSet\Control\Session Manager\Environment`, registry.QUERY_VALUE|registry.SET_VALUE)
 	if err != nil {
@@ -86,15 +99,15 @@ func removePathEntry(dir string) error {
 		return fmt.Errorf("read the machine's PATH: %w", err)
 	}
 
-	kept := withoutDir(path, dir)
-	if kept == path {
+	edited := edit(path)
+	if edited == path {
 		return nil
 	}
 
 	if kind == registry.EXPAND_SZ {
-		err = k.SetExpandStringValue("Path", kept)
+		err = k.SetExpandStringValue("Path", edited)
 	} else {
-		err = k.SetStringValue("Path", kept)
+		err = k.SetStringValue("Path", edited)
 	}
 
 	if err != nil {
@@ -109,7 +122,7 @@ func removePathEntry(dir string) error {
 var sendMessageTimeout = windows.NewLazySystemDLL("user32.dll").NewProc("SendMessageTimeoutW")
 
 // broadcastEnvironment tells every top-level window, Explorer's above all, that the
-// environment changed, so what it starts next has the PATH without conflux in it.
+// environment changed, so what it starts next has the PATH as it is now.
 func broadcastEnvironment() {
 	env, err := windows.UTF16PtrFromString("Environment")
 	if err != nil {

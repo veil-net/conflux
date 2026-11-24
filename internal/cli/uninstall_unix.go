@@ -9,3 +9,7 @@ import "github.com/veil-net/conflux/internal/paths"
 func removeInstallation() error {
 	return removeInstalled(paths.InstalledExecutable(), paths.SudoLink())
 }
+
+// addPathEntry has nothing to add: /usr/local/bin, where conflux is installed, is on a
+// terminal's PATH already.
+func addPathEntry(string) error { return nil }

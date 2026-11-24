@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +45,7 @@ func channel(dev bool) (tag, what string) {
 // nothing is installed, where this is it, and where what is installed does not run and so
 // cannot say.
 func installed(ctx context.Context, exe string) (says string, dev bool) {
-	if _, err := os.Stat(exe); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(exe); errors.Is(err, os.ErrNotExist) {
 		return fmt.Sprintf("Nothing is installed at %s.\nThis is %s, so its channel is followed.", exe, version.String()),
 			version.Dev()
 	}
@@ -130,9 +129,13 @@ func runUpdate(ctx context.Context, args []string) int {
 	}
 
 	// Nothing installed yet is no reason to refuse: the update installs it.
-	if same, err := rel.Is(exe); err != nil && !errors.Is(err, os.ErrNotExist) {
+	same, err := rel.Is(exe)
+	fresh := errors.Is(err, os.ErrNotExist)
+
+	switch {
+	case err != nil && !fresh:
 		return fail(err)
-	} else if same {
+	case same:
 		ui.Printf("%s is conflux's newest %s: %s.\n", exe, what, rel.Name)
 
 		return ExitOK
@@ -176,6 +179,14 @@ func runUpdate(ctx context.Context, args []string) int {
 	}
 
 	ui.Printf("Updated %s: %s.\n", exe, now)
+
+	// Installed where there was none, it goes where the installer puts it on the PATH too: on
+	// Windows the machine's. Said rather than refused, since the update itself is done.
+	if fresh {
+		if err := addPathEntry(filepath.Dir(exe)); err != nil {
+			ui.Errf("%s is not on the machine's PATH: %v", filepath.Dir(exe), err)
+		}
+	}
 
 	return moveService(ctx, exe)
 }

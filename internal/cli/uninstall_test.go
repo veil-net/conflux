@@ -156,6 +156,30 @@ func TestUninstallTakesThePathEntry(t *testing.T) {
 	}
 }
 
+// TestUpdatePutsThePathEntry: an update that installs conflux where there was none puts its
+// directory on the machine's PATH, as install.ps1 does: at the end, where no entry names it
+// already, however spelled; and uninstall takes it out again.
+func TestUpdatePutsThePathEntry(t *testing.T) {
+	const dir = `C:\Program Files\conflux`
+
+	for _, c := range []struct{ path, want string }{
+		{`%SystemRoot%\system32;C:\tools`, `%SystemRoot%\system32;C:\tools;` + dir},
+		{`C:\tools;`, `C:\tools;` + dir},
+		{``, dir},
+		{`C:\tools;c:\program files\CONFLUX\`, `C:\tools;c:\program files\CONFLUX\`},
+		{dir + `;C:\tools`, dir + `;C:\tools`},
+	} {
+		got := withDir(c.path, dir)
+		if got != c.want {
+			t.Errorf("withDir(%q) = %q, want %q", c.path, got, c.want)
+		}
+
+		if back := withoutDir(got, dir); back != withoutDir(c.path, dir) {
+			t.Errorf("withoutDir(withDir(%q)) = %q, which is not the PATH without it", c.path, back)
+		}
+	}
+}
+
 // TestUninstallReachesTheMachineOnlyThroughItsSeams: the two steps of uninstall that reach past
 // the root -- the accounts conflux made and the installed conflux -- go through variables a
 // test replaces, and TestMain replaces them for every test, so no test run on a real machine,

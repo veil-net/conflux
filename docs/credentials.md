@@ -50,12 +50,15 @@ again: the supervisor refuses it for good, naming the file, since drawing a new 
 and address is a person's decision. Put the manifest back: from a backup, or, for a
 guardian-issued one, as its guardian downloads it again ([config.md](config.md)). For a
 credential an issuer grants, `conflux enrol --manifest FILE` installs it on the machine
-as it stands. Otherwise start over with a new identity:
+as it stands, and `conflux start` then brings the machine back as it is configured --
+not `conflux up`, which would change a userspace or observing machine's mode. Otherwise
+start over with a new identity:
 
-1. Keep a copy of `conflux.json`, which holds the machine's settings: its taints, its
-   `apiBaseUrl` if it has one (none means the production API), and its mode's own, a proxy's
-   services among them. Note whether `conflux version` shows a `dev build:` line.
-2. `conflux uninstall`, which removes conflux and `conflux.json` as well.
+1. Keep a copy of `conflux.json`, outside `.conflux`, which holds the machine's settings:
+   its taints, its `apiBaseUrl` if it has one (none means the production API), and its
+   mode's own, a proxy's services among them. Note whether `conflux version` shows a
+   `dev build:` line.
+2. `conflux uninstall`, which removes conflux and `.conflux`, `conflux.json` with it.
 3. Install the same build of conflux again: the release, or with `CONFLUX_VERSION=dev-latest`
    the dev build ([install.md](install.md)). A credential is valid in one tree alone, and the
    other build's anchor refuses it.

@@ -24,10 +24,17 @@ import (
 // root, which the supervisor makes and holds to its modes itself, run directory included,
 // which it empties as it starts.
 //
-// User=root, and no capability line: the supervisor is root, and it is the supervisor
-// that gives anchord, as its own account, exactly the capabilities its mode needs and no
-// others (internal/daemon/privilege.go). An AmbientCapabilities= here would be granted
-// to the supervisor, which has them all as root anyway, and to nothing else.
+// No User= or Group= line, and no capability line. A system service that names neither is
+// root's, which is what the supervisor has to be. A unit that names a user, root included,
+// has systemd change to that user before it runs the command, and where the unit also asks
+// for a system-call filter -- ProtectHostname, LockPersonality, RestrictRealtime,
+// RestrictSUIDSGID and SystemCallArchitectures below are each one -- systemd 255 and later
+// keep CAP_SYS_ADMIN across the change to install it. Where systemd has none to keep, in a
+// container that is not privileged, the start fails at that change, step USER with status
+// 217, before conflux has run. It is the supervisor that gives anchord, as its own account,
+// exactly the capabilities its mode needs and no others (internal/daemon/privilege.go). An
+// AmbientCapabilities= here would be granted to the supervisor, which has them all as root
+// anyway, and to nothing else.
 //
 // The protections a system service is given where they take nothing it needs: UMask=0077,
 // so nothing the supervisor or anchord creates is anybody else's to read; a /tmp of its own
@@ -64,8 +71,6 @@ TimeoutStartSec=90
 TimeoutStopSec=30
 KillMode=mixed
 KillSignal=SIGTERM
-User=root
-Group=root
 LimitNOFILE=%[2]d
 UMask=0077
 PrivateTmp=yes

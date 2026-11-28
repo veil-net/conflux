@@ -13,7 +13,6 @@ func TestSystemdUnit(t *testing.T) {
 		"\nExecStart=/var/lib/.conflux/conflux serve\n",
 		"\nType=notify\n",
 		"\nRestartPreventExitStatus=78 70\n",
-		"\nUser=root\n",
 		// The protections a system service is given that take nothing conflux or anchord's
 		// host setup needs.
 		"\nUMask=0077\n",
@@ -32,14 +31,19 @@ func TestSystemdUnit(t *testing.T) {
 		}
 	}
 
+	// No user and no group: a system service is root's without either, and for a unit that
+	// names a user, root included, systemd 255 and later keep CAP_SYS_ADMIN across the change
+	// to it, to install the system-call filters among the protections above. In a container
+	// that is not privileged systemd has none to keep, and the start fails with status 217/USER.
 	// The supervisor gives anchord its capabilities, and systemd must not take anchord's
 	// directory back: a StateDirectory= is re-owned at every start once its group is
 	// anchord's account. Nor does the unit claim a directory of its own: everything is in
 	// the root, which the supervisor keeps. And no device policy: ProtectClock= brings
 	// DeviceAllow=char-rtc with it, which closes every other device to anchord, /dev/net/tun
 	// and an uplink's line among them.
-	for _, absent := range []string{"Capabilities=", "StateDirectory", "NoNewPrivileges", "RuntimeDirectory",
-		"ConfigurationDirectory", "ProtectSystem", "ProtectKernel", "ProtectClock", "DeviceAllow", "DevicePolicy"} {
+	for _, absent := range []string{"User=", "Group=", "Capabilities=", "StateDirectory", "NoNewPrivileges",
+		"RuntimeDirectory", "ConfigurationDirectory", "ProtectSystem", "ProtectKernel", "ProtectClock",
+		"DeviceAllow", "DevicePolicy"} {
 		if strings.Contains(unit, absent) {
 			t.Errorf("the unit has %q:\n%s", absent, unit)
 		}

@@ -245,10 +245,14 @@ running program has exited.
 a userspace `anchord` running as `conflux` or `_conflux` (the record, and the process
 itself), port 80 and a TUN keeping it root with their reasons, and `uninstall` leaving no
 script, no `rc.conf` line, no directory, no account and no `/usr/local/bin/conflux`. Before
-the service, `install.sh` installs the published `latest` as root with curl and wget set aside,
-so the base system's own `fetch` or `ftp` downloads it and its own tool checks the digest;
-`conflux` must then resolve to `/usr/local/bin/conflux`, and a second run must find the release
-already there. The build under test is copied over it for the service.
+the service, `install.sh` installs the published release as root with curl and wget set aside
+— `latest`, or the one `CONFLUX_VERSION` names, which CI sets to `dev-latest` for a pull
+request into `dev` — so the base system's own `fetch` or `ftp` downloads it and its own tool
+checks the digest; `conflux` must then resolve to `/usr/local/bin/conflux`, and a second run
+must find the release already there. The first run is asked again, twenty tries at most and
+fifteen seconds apart, while it says it could not download the release: a merge into `dev`
+deletes `dev-latest` and publishes it again, and for half a minute there is no whole release
+to install. The build under test is copied over it for the service.
 
 ### Local network discovery, the bootstrap list, and `conflux enrol`
 
@@ -328,8 +332,8 @@ why it is nonetheless contained.
 |---|---|---|
 | `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries, nothing skipped and every test the source declares for Linux passing; `make cross`; `make buildcheck`: the digests `make build` stamps are the pair's own, and the built conflux runs in FIPS 140-3 mode, its integrity check passing, and refuses to run with the mode off; `conflux cert probe` handshaking, in that mode, with every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net) |
 | `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service, three nodes and an ephemeral fourth against the live API of the base's tree (`$VEILNET_API`) side by side |
-| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `install.sh` against the published `latest`, with the base system's own download and digest tools, run twice; then `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, its integrity check verified and exit 70 with the mode off (`scripts/fips-check.sh`, the half of `make buildcheck` that needs no Go, which the VM has none of), making and verifying an ML-DSA certificate; OpenBSD's without the module, its `conflux cert` refusing with 70 |
-| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included and every test the source declares for that platform run; `make buildcheck` on that platform's own build; on macOS and Windows, `test/service-host.sh` with that build, against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` refusing 32-bit Windows PowerShell, then under Windows PowerShell 5.1 and then PowerShell 7 |
+| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `install.sh` against the published release of the base's side (`latest` into `version3`, `dev-latest` otherwise), with the base system's own download and digest tools, run twice, the first run asked again while it says it could not download the release; then `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, its integrity check verified and exit 70 with the mode off (`scripts/fips-check.sh`, the half of `make buildcheck` that needs no Go, which the VM has none of), making and verifying an ML-DSA certificate; OpenBSD's without the module, its `conflux cert` refusing with 70 |
+| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included and every test the source declares for that platform run; `make buildcheck` on that platform's own build; on macOS and Windows, `test/service-host.sh` with that build, against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published release of the base's side (`latest` into `version3`, `dev-latest` otherwise), run as a person runs them, the first run that installs asked again while it says it could not download the release, and then run again: `install.sh` on macOS and Linux arm64, `install.ps1` refusing 32-bit Windows PowerShell, then under Windows PowerShell 5.1 and then PowerShell 7 |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the

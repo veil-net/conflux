@@ -12,7 +12,9 @@ name: ci
 # Each side is tested against the anchor it will embed: a pull request into version3, the
 # release, against anchor's `latest`; everything else -- a pull request into dev, a hand-run on
 # a feature branch -- against anchor's dev build, `dev-latest`, so the two dev branches are
-# always tested together.
+# always tested together. The install scripts install conflux's own release of the same side:
+# `latest` for version3 and `dev-latest` for everything else, so nothing a pull request into
+# dev runs is version3's.
 #
 # CI verifies that the code builds and runs. The utility checks -- gofmt, staticcheck,
 # go mod tidy, govulncheck, the docs links, actionlint, shellcheck -- run on the machine
@@ -34,9 +36,19 @@ permissions:
 # conflux built here, by make or by a bare go command, is built against that Go Cryptographic
 # Module and runs in FIPS 140-3 mode (docs/security.md, "FIPS 140-3 and CMVP"). The make
 # recipes build OpenBSD with it off.
+#
+# CONFLUX_VERSION is the install scripts' own setting, and so the release the steps that run
+# them install: empty for version3, which is `latest`, as a person runs them with nothing set;
+# `dev-latest` for everything else, the build the last merge into dev published, as a person
+# asks for a dev build. release.yml deletes `dev-latest` and publishes it again at every merge
+# into dev: for about half a minute, some two minutes after the merge, there is no release to
+# install, or one whose files are still arriving. The scripts refuse that, saying what they
+# could not download, and in each leg the first run that installs is asked again while it
+# says so, twenty tries at most.
 env:
   ANCHOR_TAG: ${{ (github.base_ref || github.ref_name) == 'version3' && 'latest' || 'dev-latest' }}
   VEILNET_API: ${{ (github.base_ref || github.ref_name) == 'version3' && 'https://api.veilnet.com.au' || 'https://api-dev.veilnet.com.au' }}
+  CONFLUX_VERSION: ${{ (github.base_ref || github.ref_name) != 'version3' && 'dev-latest' || '' }}
 
 # A superseded run holds the one self-hosted machine the run that replaced it is
 # waiting for.
@@ -157,8 +169,9 @@ jobs:
         run: make -j2 -O service-test integration
 
   # FreeBSD and OpenBSD, which no hosted runner is: each in a VM on a hosted Linux runner.
-  # First install.sh, as a person runs it, against the published `latest`, with nothing to
-  # download with but the base system's fetch or ftp; then rc for real -- install registers
+  # First install.sh, as a person runs it, against the published release of the base's side
+  # ($CONFLUX_VERSION above, handed to the VM on its command line), with nothing to download
+  # with but the base system's fetch or ftp; then rc for real -- install registers
   # and starts nothing, anchord runs as conflux's own account in userspace and as root where
   # its kernel keeps a TUN and a low port for root, and uninstall leaves nothing, the account
   # included. `make cross` vets both; this is the one place either runs. Only the pair for
@@ -204,7 +217,7 @@ jobs:
         with:
           release: "15.1"
           copyback: false
-          run: sh test/service-bsd.sh bin/conflux
+          run: CONFLUX_VERSION='${{ env.CONFLUX_VERSION }}' sh test/service-bsd.sh bin/conflux
 
       - name: the boot service against rc, in an OpenBSD VM
         if: matrix.os == 'openbsd'
@@ -212,7 +225,7 @@ jobs:
         with:
           release: "7.9"
           copyback: false
-          run: sh test/service-bsd.sh bin/conflux
+          run: CONFLUX_VERSION='${{ env.CONFLUX_VERSION }}' sh test/service-bsd.sh bin/conflux
 
   # macOS and Windows, on the operating systems that have the path handling, the file
   # modes, the DACLs and the service code, and Linux on arm64. Each fetches only its own
@@ -311,19 +324,30 @@ jobs:
             ./test/service-host.sh bin/conflux.exe
           fi
 
-      # The install scripts as a person runs them, against the published `latest`: the script
-      # on stdin, as `curl … | sh` gives it, into /usr/local/bin with sudo where that is root's;
-      # and run again, which finds the release's conflux already there and changes nothing.
-      - name: install.sh installs the latest release
+      # The install scripts as a person runs them, against the published release of the base's
+      # side ($CONFLUX_VERSION above: `latest`, or `dev-latest` by name): the script on stdin,
+      # as `curl … | sh` gives it, into /usr/local/bin with sudo where that is root's; and run
+      # again, which finds that release's conflux already there and changes nothing.
+      - name: install.sh installs the ${{ env.CONFLUX_VERSION || 'latest' }} release
         if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
-          sh < install.sh
+          # Asked again while it says it could not download the release, which is being
+          # published (CONFLUX_VERSION, above): twenty tries at most, fifteen seconds apart.
+          # Any other refusal is the step's, at once.
+          tries=0
+          until out=$(sh < install.sh 2>&1); do
+            printf '%s\n' "$out" >&2
+            tries=$((tries + 1))
+            if [ "$tries" -ge 20 ] || ! grep -q 'could not download' <<< "$out"; then exit 1; fi
+            sleep 15
+          done
+          printf '%s\n' "$out"
           [ "$(command -v conflux)" = /usr/local/bin/conflux ]
           conflux version
           again=$(sh < install.sh)
-          grep 'is already the latest release' <<< "$again"
+          grep "is already the ${CONFLUX_VERSION:-latest} release" <<< "$again"
 
       # 32-bit Windows PowerShell, which 64-bit Windows has beside its own: its Program Files is
       # the x86 one, where conflux never looks for itself, so install.ps1 refuses there, saying to
@@ -349,11 +373,21 @@ jobs:
       # Under Windows PowerShell 5.1, which is what a Windows machine opens, by Invoke-Expression
       # as `irm … | iex` runs it; then again from PowerShell 7, which finds it on the machine's
       # PATH and changes nothing.
-      - name: install.ps1 installs the latest release
+      - name: install.ps1 installs the ${{ env.CONFLUX_VERSION || 'latest' }} release
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          Get-Content install.ps1 -Raw | Invoke-Expression
+          # Asked again while it says it could not download the release, as install.sh is above.
+          $tries = 0
+          while ($true) {
+            try { Get-Content install.ps1 -Raw | Invoke-Expression; break }
+            catch {
+              $tries++
+              if ($tries -ge 20 -or "$_" -notlike '*could not download*') { throw }
+              Write-Host "$_"
+              Start-Sleep -Seconds 15
+            }
+          }
           $exe = Join-Path $env:ProgramFiles 'conflux\conflux.exe'
           if ((Get-Command conflux).Source -ne $exe) { throw "conflux is not $exe on this session's PATH" }
           conflux version
@@ -367,4 +401,5 @@ jobs:
           if (($machine -split ';') -notcontains $dir) { throw "$dir is not on the machine's PATH" }
           $out = Get-Content install.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
           Write-Host $out
-          if ($out -notmatch 'is already the latest release') { throw 'the second run did not find the release already installed' }
+          $tag = if ($env:CONFLUX_VERSION) { $env:CONFLUX_VERSION } else { 'latest' }
+          if (-not $out.Contains("is already the $tag release")) { throw "the second run did not find the $tag release already installed" }

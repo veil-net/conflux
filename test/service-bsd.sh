@@ -9,8 +9,10 @@
 # a port only root may bind keep it root, saying why; and uninstall leaves nothing behind,
 # the account included. Nothing is enrolled: the configuration names an API that accepts
 # and answers nothing, so anchord stays up while the enrolment waits. Before all of it,
-# install.sh installs the published `latest` with the base system's own tools, as the
-# platforms legs install it elsewhere. POSIX sh, which is what both have.
+# install.sh installs the published release with the base system's own tools, as the
+# platforms legs install it elsewhere: `latest`, or the release CONFLUX_VERSION names.
+# CONFLUX_VERSION is install.sh's own setting, and CI gives it `dev-latest` for a pull request
+# into dev. POSIX sh, which is what both have.
 set -eu
 
 CONFLUX=${1:?usage: test/service-bsd.sh CONFLUX}
@@ -31,12 +33,18 @@ rc() { # VERB
   if [ "$os" = freebsd ]; then service conflux "$1"; else rcctl "$1" conflux; fi
 }
 
-# install.sh as a person runs it, against the published `latest`: the script on stdin, as root,
-# with root's own PATH and nothing on it to download with but the base system's client -- curl
-# and wget, where a package put them, are set aside for the leg -- so FreeBSD's fetch or
-# OpenBSD's ftp downloads, and the base system's own tool checks the digest. Run again, it
-# finds the release's conflux already there. The build under test goes over it below.
-say "install.sh installs the latest release with the base system's own tools"
+# install.sh as a person runs it, against the published release it is asked for: the script on
+# stdin, as root, with root's own PATH and nothing on it to download with but the base system's
+# client -- curl and wget, where a package put them, are set aside for the leg -- so FreeBSD's
+# fetch or OpenBSD's ftp downloads, and the base system's own tool checks the digest. Run
+# again, it finds the release's conflux already there. The build under test goes over it below.
+#
+# The first run is asked again while it says it could not download the release: a merge into
+# dev deletes dev-latest and publishes it again, and for half a minute there is none to install,
+# or one whose files are still arriving. Twenty tries at most, fifteen seconds apart; any
+# other refusal fails the leg at once.
+tag=${CONFLUX_VERSION:-latest}
+say "install.sh installs the $tag release with the base system's own tools"
 installer=$(dirname "$0")/../install.sh
 (
   PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
@@ -49,15 +57,25 @@ installer=$(dirname "$0")/../install.sh
       aside="$aside $p"
     done
   done
-  sh < "$installer" || fail "install.sh did not install the latest release"
+  tries=0
+  until out=$(sh < "$installer" 2>&1); do
+    printf '%s\n' "$out" >&2
+    tries=$((tries + 1))
+    case $out in
+      *'could not download'*) [ "$tries" -lt 20 ] || fail "install.sh could not download the $tag release in twenty tries" ;;
+      *) fail "install.sh did not install the $tag release" ;;
+    esac
+    sleep 15
+  done
+  printf '%s\n' "$out"
   [ "$(command -v conflux)" = /usr/local/bin/conflux ] ||
     fail "conflux is $(command -v conflux || echo nowhere) on PATH, not /usr/local/bin/conflux"
   conflux version || fail "the conflux install.sh installed does not run"
   again=$(sh < "$installer") || fail "install.sh, run again, failed"
   printf '%s\n' "$again"
   case $again in
-    *'is already the latest release'*) ;;
-    *) fail "install.sh, run again, did not find the latest release already installed" ;;
+    *"is already the $tag release"*) ;;
+    *) fail "install.sh, run again, did not find the $tag release already installed" ;;
   esac
   for p in $aside; do mv "$p.aside" "$p"; done
 )

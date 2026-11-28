@@ -17,6 +17,10 @@
 #
 # Restarting the container is the reboot, and that half lives in integration.sh
 # because proving a machine comes back needs a machine that was up.
+#
+# That container is --privileged, as integration.sh's are, and systemd there has every
+# capability. The first leg is a second one that is not, held only to systemd starting the
+# unit in it, with nothing configured and nothing enrolled.
 set -euo pipefail
 
 # Nothing here pipes a command into grep -q: grep stops at its first match, the command still
@@ -26,6 +30,7 @@ set -euo pipefail
 IMAGE=${IMAGE:-conflux-systemd-test}
 NAME=${NAME:-cfx}
 OTEL=${OTEL:-$NAME-otel}
+BARE=${BARE:-$NAME-bare}
 
 # The collector the observer's records are exported to: anchor's own suite runs this one.
 OTEL_IMAGE=${OTEL_IMAGE:-otel/opentelemetry-collector:0.162.0}
@@ -42,9 +47,80 @@ say() { printf '\n== %s\n' "$*"; }
 # the runner's SIGTERM ends bash without it, and SIGKILL is not catchable at all --
 # and on a machine that is not thrown away afterwards that leaves a name the next run
 # collides with, for a reason that has nothing to do with the commit under test.
-docker rm -f "$NAME" "$OTEL" >/dev/null 2>&1 || true
+docker rm -f "$NAME" "$OTEL" "$BARE" >/dev/null 2>&1 || true
 otelconf=$(mktemp)
-trap 'docker rm -f "$NAME" "$OTEL" >/dev/null 2>&1 || true; rm -f "$otelconf"' EXIT
+trap 'docker rm -f "$NAME" "$OTEL" "$BARE" >/dev/null 2>&1 || true; rm -f "$otelconf"' EXIT
+
+# The container the rest of this suite runs in is --privileged, which is every capability, and
+# a unit systemd can start only with one of them starts there all the same. One that names a
+# user, root included, is such a unit: systemd 255 and later keep CAP_SYS_ADMIN across the
+# change to that user, to install the unit's system-call filters after it, and with none to
+# keep fail the start at step USER, status 217, before conflux has run. So the unit is
+# registered and started here first, in a container where systemd has no CAP_SYS_ADMIN. That
+# container is given what Docker gives any container and, over that, CAP_NET_ADMIN and
+# /dev/net/tun, which a TUN takes; the cgroup tree, as the other container is; and /run, since
+# a systemd that may not mount makes none of its own. Nothing is configured, so a conflux that
+# was run says there is nothing to start and exits 78: that status is conflux's own, and the
+# proof systemd got as far as running it.
+#
+# The container has a terminal (-t), which is where systemd says what it does as it boots:
+# Docker keeps that, and it is what is read, below, of a systemd that ended before it came up.
+say "the unit starts in a container that is not privileged"
+docker run -d -t --name "$BARE" --cap-add NET_ADMIN --device /dev/net/tun \
+  --tmpfs /run:exec --tmpfs /run/lock --cgroupns=host \
+  -v /sys/fs/cgroup:/sys/fs/cgroup:rw "$IMAGE" >/dev/null
+
+# degraded will do: systemd is up, with a unit that failed, and with these flags /tmp is one,
+# a mount this systemd may not make. The leg is held to conflux's unit and to no other.
+state=""
+for _ in $(seq 40); do
+  state=$(docker exec "$BARE" systemctl is-system-running 2>/dev/null || true)
+  case $state in running | degraded) break ;; esac
+  sleep 1
+done
+case $state in
+  running | degraded) ;;
+  *) echo "systemd did not come up in the container that is not privileged: ${state:-no answer}" >&2
+     docker inspect -f 'its container is {{.State.Status}}, exit status {{.State.ExitCode}}' "$BARE" >&2 || true
+     # A systemd still there is asked what it waits for and what it logged. One that has ended
+     # cannot be asked, and what it wrote to the terminal is read instead, as text: without the
+     # control sequences -- one from ESC ] to a BEL, one that begins ESC [, and any other ESC
+     # and the byte after it -- or the carriage returns, and without the status line systemd
+     # redraws twice a second for a job still running, which begins with a bracket of spaces
+     # and asterisks.
+     if [ "$(docker inspect -f '{{.State.Running}}' "$BARE" 2>/dev/null || true)" = true ]; then
+       docker exec "$BARE" systemctl list-jobs --no-pager >&2 || true
+       docker exec "$BARE" journalctl -b -n 40 --no-pager >&2 || true
+     else
+       docker logs "$BARE" 2>&1 |
+         LC_ALL=C sed -e $'s|\033][^\a]*\a||g' -e $'s|\033\\[[0-?]*[ -/]*[@-~]||g' -e $'s|\033.||g' -e $'s|\r||g' |
+         LC_ALL=C grep -av '^\[[ *]*] ' | tail -n 40 >&2 || true
+     fi
+     exit 1 ;;
+esac
+
+# Held to what the leg is for: a systemd that does have CAP_SYS_ADMIN, bit 21, would start
+# the unit whatever it named, and the leg would pass having shown nothing.
+held=$(docker exec "$BARE" sed -n 's/^CapEff:[[:space:]]*//p' /proc/1/status)
+case $held in
+  '' | *[!0-9a-f]*)
+    echo "could not read the capabilities systemd holds in the container that is not privileged: ${held:-nothing}" >&2
+    exit 1 ;;
+esac
+if (( (0x$held >> 21) & 1 )); then
+  echo "systemd holds CAP_SYS_ADMIN (CapEff $held) in a container that was not given it" >&2
+  exit 1
+fi
+
+docker exec "$BARE" conflux install >/dev/null
+docker exec "$BARE" systemctl start conflux.service >/dev/null 2>&1 || true
+ended=$(docker exec "$BARE" systemctl show -p ExecMainStatus --value conflux.service)
+if [ "$ended" != 78 ]; then
+  echo "without privilege the unit's start ended with status ${ended:-unknown}, not conflux's own 78:" >&2
+  docker exec "$BARE" journalctl -u conflux.service -n 40 --no-pager >&2 || true
+  exit 1
+fi
+docker rm -f "$BARE" >/dev/null
 
 say "a container that boots systemd"
 docker run -d --name "$NAME" --privileged --cgroupns=host \
@@ -429,7 +505,9 @@ enrolled_once "the legs beside an anchor"
 # start registers the unit this conflux writes: one changed by hand, here with a capability
 # line, is replaced.
 say "start registers the unit this conflux writes"
-docker exec "$NAME" sh -c 'sed -i "s/^User=root$/User=root\nAmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW/" /etc/systemd/system/conflux.service && systemctl daemon-reload'
+docker exec "$NAME" sh -c 'sed -i "s/^\[Service\]$/[Service]\nAmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW/" /etc/systemd/system/conflux.service && systemctl daemon-reload'
+docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.service \
+  || { echo "the unit was not changed by hand, so there is nothing for start to replace" >&2; exit 1; }
 docker exec "$NAME" systemctl stop conflux.service
 docker exec "$NAME" timeout 10 conflux start >/dev/null 2>&1 || true
 if docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.service; then
@@ -446,12 +524,14 @@ say "a start by systemd puts the unit back and removes its drop-ins"
 dropins=(/etc/systemd/system/conflux.service.d /etc/systemd/system.control/conflux.service.d
   /run/systemd/system/conflux.service.d /run/systemd/system.control/conflux.service.d)
 anydropin() { docker exec "$NAME" sh -c 'for d; do [ -e "$d" ] && exit 0; done; exit 1' sh "${dropins[@]}"; }
-docker exec "$NAME" sh -c 'sed -i "s/^User=root$/User=root\nAmbientCapabilities=CAP_NET_ADMIN/" /etc/systemd/system/conflux.service &&
+docker exec "$NAME" sh -c 'sed -i "s/^\[Service\]$/[Service]\nAmbientCapabilities=CAP_NET_ADMIN/" /etc/systemd/system/conflux.service &&
   for d in /etc/systemd/system /run/systemd/system; do
     mkdir -p $d/conflux.service.d && printf "[Service]\nEnvironment=HAND=1\n" > $d/conflux.service.d/hand.conf
   done &&
   systemctl set-property conflux.service CPUWeight=50 &&
   systemctl set-property --runtime conflux.service CPUWeight=60 && systemctl daemon-reload'
+docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.service \
+  || { echo "the unit was not changed by hand, so there is nothing for a start to put back" >&2; exit 1; }
 for d in "${dropins[@]}"; do
   docker exec "$NAME" test -d "$d" || { echo "there is no drop-in at $d for a start to remove" >&2; exit 1; }
 done

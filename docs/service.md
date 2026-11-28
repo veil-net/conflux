@@ -214,8 +214,6 @@ TimeoutStartSec=90
 TimeoutStopSec=30
 KillMode=mixed
 KillSignal=SIGTERM
-User=root
-Group=root
 LimitNOFILE=1048576
 UMask=0077
 PrivateTmp=yes
@@ -253,9 +251,16 @@ every start of a unit started more than five times in ten seconds until the ten 
 are up, and a few quick attempts at a configuration that does not work are enough to get
 there; the operator's next start, with it fixed, is not one more of them.
 
-`User=root` and no capability line. The supervisor is root, and it is the supervisor
-that gives `anchord`, as an account of its own, exactly the capabilities its mode needs —
-`CAP_NET_ADMIN` for a TUN, none in userspace — and nothing else. An
+No `User=` or `Group=` line, and no capability line. A system service that names neither
+is root's, which is what the supervisor has to be. A unit that names a user, root included,
+has systemd change to that user before it runs the command, and where the unit also asks for
+a system-call filter — `ProtectHostname=`, `LockPersonality=`, `RestrictRealtime=`,
+`RestrictSUIDSGID=` and `SystemCallArchitectures=` here are each one — systemd 255 and later
+keep `CAP_SYS_ADMIN` across the change to install it. Where systemd has none to keep, in a
+container that is not privileged, the start fails at that change, before conflux has run:
+`Failed to keep CAP_SYS_ADMIN: Operation not permitted`, then `status=217/USER`. It is the
+supervisor that gives `anchord`, as an account of its own, exactly the capabilities its mode
+needs — `CAP_NET_ADMIN` for a TUN, none in userspace — and nothing else. An
 `AmbientCapabilities=` here would go to the supervisor, which as root has them all
 anyway, and reach nothing more.
 
